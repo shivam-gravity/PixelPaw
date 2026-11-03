@@ -49,6 +49,7 @@ end
 local function browser_settings()
   local w, h = canvas_size()
   local s = obs.obs_data_create()
+  obs.obs_data_set_bool(s, "is_local_file", false)  -- the overlay is a URL, never a local file
   obs.obs_data_set_string(s, "url", url)
   obs.obs_data_set_int(s, "width", w)
   obs.obs_data_set_int(s, "height", h)

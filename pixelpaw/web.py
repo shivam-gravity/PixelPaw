@@ -121,6 +121,8 @@ def make_handler(app, token: str):
                 self.send_response(302)
                 self.send_header("Location", "/dock")
                 self.end_headers()
+            elif path == "/favicon.ico":
+                self._send(204, b"", "image/x-icon")
             elif path == "/overlay":
                 self._page("overlay.html")
             elif path == "/dock":

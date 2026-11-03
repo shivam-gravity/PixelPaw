@@ -70,7 +70,7 @@ Start PixelPaw first (`python -m pixelpaw run`, or `python -m pixelpaw overlay` 
 
 **Overlay (on-stream alerts)**
 - Easiest: **Tools → Scripts → `+`** and pick [`obs/pixelpaw.lua`](obs/pixelpaw.lua), then click **Add overlay to current scene**.
-- Or manually: **Sources → `+` → Browser**, URL `http://127.0.0.1:8765/overlay`, set the size to your canvas (e.g. 1920×1080).
+- Or manually: **Sources → `+` → Browser**, URL `http://127.0.0.1:8765/overlay`, set the size to your canvas (e.g. 1920×1080). Leave **Local file** unticked: the `.lua` file goes in *Tools → Scripts*, not in a Browser Source.
 - To position it before going live, open `http://127.0.0.1:8765/overlay?demo=1` or run `python -m pixelpaw overlay --demo`.
 
 Overlay options (add them to the URL): `?lang=hi` · `&pos=bottom-right` (`bottom-left`, `top-left`, `top-right`, `center`) · `&scale=1.3` · `&seconds=10` · `&show=super_chat,member,ask` · `&theme=light`
