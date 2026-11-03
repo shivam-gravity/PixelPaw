@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14141c">
+<title>PixelPaw</title>
+<style>
+  :root {
+    --bg: #f6f6f9; --panel: #ffffff; --line: #e4e4ec; --text: #17171f; --muted: #6b6b7b;
+    --accent: #7c3aed; --ok: #059669; --bad: #dc2626; --warn: #b45309; --live: #e11d48;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Sans Arabic",
+            "Noto Sans JP", "Noto Sans KR", "Noto Sans SC", "Noto Sans Thai", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14141c; --panel: #1e1e29; --line: #2e2e3d; --text: #ececf3; --muted: #9a9aad;
+            --accent: #a78bfa; --ok: #34d399; --bad: #f87171; --warn: #fbbf24; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font);
+         padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                  max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--line); color: var(--muted); }
+  .badge.live { background: var(--live); color: #fff; }
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } .wide { grid-column: 1 / -1; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .draft { border-top: 1px solid var(--line); padding: 10px 0; }
+  .draft:first-of-type { border-top: 0; padding-top: 0; }
+  .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .comment { margin: 4px 0 8px; overflow-wrap: anywhere; }
+  textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; color: inherit; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 14px; min-height: 40px;
+           cursor: pointer; background: var(--line); color: var(--text); }
+  button.primary { background: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: progress; }
+  .msg { font-size: 12px; overflow-wrap: anywhere; } .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); } .msg.warn { color: var(--warn); }
+  .note { font-size: 12px; color: var(--warn); margin-top: 4px; overflow-wrap: anywhere; }
+  ul.feed { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
+  ul.feed li { padding: 7px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  ul.feed li:first-child { border-top: 0; }
+  .empty { color: var(--muted); }
+  .error { background: var(--bad); color: #fff; padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">🐾 PixelPaw</h1>
+  <span id="live" class="badge">…</span>
+  <button id="test" type="button"></button>
+</header>
+<div id="error" class="error" hidden></div>
+<div class="grid">
+  <section class="wide">
+    <h2 id="h-channel"></h2>
+    <div class="stats" id="stats"></div>
+  </section>
+  <section>
+    <h2 id="h-drafts"></h2>
+    <div id="drafts"></div>
+  </section>
+  <section>
+    <h2 id="h-activity"></h2>
+    <ul class="feed" id="feed"></ul>
+  </section>
+</div>
+<script>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  let token = q.get("token") || "";
+  try { if (token) localStorage.setItem("pixelpaw_token", token); else token = localStorage.getItem("pixelpaw_token") || ""; } catch (e) {}
+  const cfg = await (await fetch("/api/config")).json().catch(() => ({ lang: "en" }));
+  const lang = q.get("lang") || cfg.lang || navigator.language || "en";
+  const S = await (await fetch("/api/i18n?lang=" + encodeURIComponent(lang))).json().catch(() => ({}));
+  const T = (k) => S[k] || k;
+  document.documentElement.lang = lang;
+  document.documentElement.dir = S._dir || "ltr";
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls;
+                                   if (text != null) { n.textContent = text; n.dir = "auto"; } return n; };
+  const fmt = (n) => (n == null ? "–" : Number(n).toLocaleString(lang));
+  $("h-channel").textContent = T("channel"); $("h-drafts").textContent = T("drafts");
+  $("h-activity").textContent = T("activity"); $("test").textContent = T("send_test");
+
+  const api = async (path, opts = {}) => {
+    const r = await fetch(path, { ...opts, headers: { "X-PixelPaw-Token": token, "Content-Type": "application/json" } });
+    if (r.status === 401) { $("error").hidden = false; $("error").textContent = "Missing or wrong token: open the dashboard link printed in the PixelPaw terminal."; throw new Error("401"); }
+    return r.json();
+  };
+
+  function setLive(live) {
+    $("live").textContent = live.active ? "● " + T("live_now") : T("offline");
+    $("live").className = "badge" + (live.active ? " live" : "");
+    $("live").title = live.title || "";
+  }
+
+  async function loadState() {
+    const s = await api("/api/state");
+    $("title").textContent = "🐾 " + s.channel;
+    setLive(s.live);
+    const snap = s.snapshot || {};
+    $("stats").replaceChildren(...[
+      [fmt(snap.subscribers), T("subscribers")], [fmt(snap.views), T("total_views")],
+      [fmt(snap.videos), T("videos")], [fmt(s.pending), T("drafts")],
+    ].map(([v, label]) => { const d = el("div", "stat"); d.append(el("b", "", v), el("span", "", label)); return d; }));
+    $("feed").replaceChildren();
+    s.recent.forEach(addEvent);
+  }
+
+  async function loadDrafts() {
+    const rows = await api("/api/drafts");
+    const box = $("drafts");
+    box.replaceChildren();
+    if (!rows.length) { box.append(el("div", "empty", T("no_drafts"))); return; }
+    rows.forEach((r) => {
+      const d = el("div", "draft");
+      d.append(el("div", "meta", `${r.author} · ${r.video_title || ""} · ${r.category || ""}`), el("div", "comment", r.text));
+      if (r.note) d.append(el("div", "note", r.note));
+      const ta = el("textarea"); ta.value = r.draft || ""; ta.dir = "auto";
+      const ok = el("button", "primary", T("approve")), no = el("button", "", T("discard")), msg = el("span", "msg");
+      ok.type = no.type = "button";
+      ok.onclick = async () => {
+        ok.disabled = no.disabled = true; msg.className = "msg"; msg.textContent = "…";
+        let res = await api(`/api/drafts/${encodeURIComponent(r.id)}/approve`, { method: "POST", body: JSON.stringify({ text: ta.value }) });
+        if (res.status === "warn") {
+          msg.className = "msg warn"; msg.textContent = "⚠️ " + res.message;
+          ok.textContent = T("approve") + " ⚠️"; ok.disabled = no.disabled = false;
+          ok.onclick = async () => {
+            ok.disabled = true;
+            res = await api(`/api/drafts/${encodeURIComponent(r.id)}/approve`, { method: "POST", body: JSON.stringify({ text: ta.value, force: true }) });
+            done(res);
+          };
+          return;
+        }
+        done(res);
+      };
+      const done = (res) => {
+        if (res.status === "posted") { msg.className = "msg ok"; msg.textContent = "✔ " + T("posted"); setTimeout(() => d.remove(), 1200); }
+        else { msg.className = "msg bad"; msg.textContent = (res.status === "blocked" ? "⛔ " + T("blocked") + ": " : "✖ ") + res.message;
+               ok.disabled = no.disabled = false; }
+      };
+      no.onclick = async () => { await api(`/api/drafts/${encodeURIComponent(r.id)}/discard`, { method: "POST" }); d.remove(); };
+      const row = el("div", "row"); row.append(ok, no, msg);
+      d.append(ta, row);
+      box.append(d);
+    });
+  }
+
+  function describe(ev) {
+    switch (ev.kind) {
+      case "super_chat": return `💛 ${T("super_chat")} · ${ev.name} ${ev.amount || ""} ${ev.message || ""}`;
+      case "member": return `🎉 ${T("new_member")} · ${ev.name}`;
+      case "ask": return `🤖 ${ev.name} ${T("asked")}: ${ev.question} → ${ev.answer}`;
+      case "replied": return `💬 ${ev.author}: ${ev.text} → ${ev.reply}`;
+      case "alert": return `🔔 ${T("alert")}: ${ev.text}`;
+      case "live": return ev.active ? `● ${T("live_now")}: ${ev.title}` : `○ ${T("offline")}`;
+      case "test": return `🐾 ${ev.message}`;
+      default: return `${ev.kind}`;
+    }
+  }
+  function addEvent(ev) {
+    if (ev.kind === "live") setLive(ev);
+    const li = el("li", "", `${new Date(ev.ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} ${describe(ev)}`);
+    $("feed").prepend(li);
+    while ($("feed").children.length > 60) $("feed").lastChild.remove();
+  }
+
+  $("test").onclick = () => api("/api/test", { method: "POST" });
+  try {
+    await loadState(); await loadDrafts();
+    const es = new EventSource("/api/events?token=" + encodeURIComponent(token));
+    es.onmessage = (m) => { const ev = JSON.parse(m.data); addEvent(ev); if (ev.kind === "replied" || ev.kind === "alert") loadDrafts(); };
+    setInterval(() => loadState().catch(() => {}), 60000);
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

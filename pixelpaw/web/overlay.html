@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PixelPaw overlay</title>
+<style>
+  /* Transparent page for an OBS Browser Source. Options via URL:
+     ?lang=hi  &show=super_chat,member,ask  &pos=bottom-left|bottom-right|top-left|top-right|center
+     &seconds=8  &scale=1.2  &theme=dark|light */
+  :root {
+    --scale: 1;
+    --card: rgba(18, 18, 28, .88); --text: #fff; --muted: rgba(255,255,255,.75);
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali",
+            "Noto Sans Tamil", "Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans Thai", "Noto Sans JP", "Noto Sans KR",
+            "Noto Sans SC", "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  }
+  :root.light { --card: rgba(255,255,255,.94); --text: #15151f; --muted: rgba(21,21,31,.7); }
+  html, body { margin: 0; background: transparent; overflow: hidden; height: 100%; }
+  #stack {
+    position: fixed; display: flex; flex-direction: column; gap: calc(12px * var(--scale));
+    padding: calc(24px * var(--scale)); width: min(92vw, calc(440px * var(--scale)));
+    font-family: var(--font);
+  }
+  .bottom-left  { left: 0; bottom: 0; }
+  .bottom-right { right: 0; bottom: 0; align-items: flex-end; }
+  .top-left     { left: 0; top: 0; flex-direction: column-reverse; }
+  .top-right    { right: 0; top: 0; align-items: flex-end; flex-direction: column-reverse; }
+  .center       { left: 50%; top: 50%; transform: translate(-50%, -50%); align-items: center; }
+  .card {
+    --accent: #8b5cf6;
+    display: flex; gap: calc(14px * var(--scale)); align-items: flex-start; width: 100%; box-sizing: border-box;
+    background: var(--card); color: var(--text); border-radius: calc(16px * var(--scale));
+    border-inline-start: calc(6px * var(--scale)) solid var(--accent);
+    padding: calc(14px * var(--scale)) calc(18px * var(--scale));
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    animation: in .45s cubic-bezier(.2,.9,.3,1.3) both;
+  }
+  .card.out { animation: out .4s ease-in both; }
+  .card.super_chat { --accent: #f5b301; } .card.member { --accent: #10b981; }
+  .card.ask { --accent: #3b82f6; } .card.test { --accent: #ec4899; }
+  .icon { font-size: calc(30px * var(--scale)); line-height: 1.1; }
+  .body { min-width: 0; flex: 1; }
+  .title { font-weight: 800; font-size: calc(18px * var(--scale)); overflow-wrap: anywhere; }
+  .amount { color: var(--accent); margin: 0 .4em; }
+  .text { margin-top: calc(4px * var(--scale)); font-size: calc(16px * var(--scale)); color: var(--muted);
+          line-height: 1.4; overflow-wrap: anywhere; }
+  .answer { margin-top: calc(6px * var(--scale)); font-size: calc(17px * var(--scale)); line-height: 1.4; overflow-wrap: anywhere; }
+  @keyframes in  { from { opacity: 0; transform: translateY(20px) scale(.96); } to { opacity: 1; transform: none; } }
+  @keyframes out { to   { opacity: 0; transform: translateY(10px) scale(.98); } }
+  @media (prefers-reduced-motion: reduce) { .card, .card.out { animation-duration: .01s; } }
+</style>
+</head>
+<body>
+<div id="stack" class="bottom-left" aria-live="polite"></div>
+<script>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  let cfg = { lang: "en", overlay: { show: ["super_chat", "member", "ask"], seconds: 8, position: "bottom-left" } };
+  try { cfg = await (await fetch("/api/config")).json(); } catch (e) {}
+  const lang = q.get("lang") || cfg.lang;
+  const show = new Set((q.get("show") || cfg.overlay.show.join(",")).split(",").concat(["test"]));
+  const seconds = Number(q.get("seconds") || cfg.overlay.seconds || 8);
+  const pos = q.get("pos") || cfg.overlay.position || "bottom-left";
+  document.documentElement.style.setProperty("--scale", q.get("scale") || "1");
+  if (q.get("theme") === "light") document.documentElement.classList.add("light");
+
+  let S = {};
+  try { S = await (await fetch("/api/i18n?lang=" + encodeURIComponent(lang))).json(); } catch (e) {}
+  document.documentElement.lang = lang;
+  document.documentElement.dir = S._dir || "ltr";
+
+  const stack = document.getElementById("stack");
+  stack.className = pos;
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls;
+                                   if (text) { n.textContent = text; n.dir = "auto"; } return n; };
+
+  function card(ev) {
+    const c = el("div", "card " + ev.kind), icon = el("div", "icon"), body = el("div", "body"), title = el("div", "title");
+    if (ev.kind === "super_chat" || ev.kind === "test") {
+      icon.textContent = ev.kind === "test" ? "🐾" : "💛";
+      title.append(el("bdi", "", ev.name), el("span", "amount", ev.amount || ""));
+      body.append(title);
+      if (ev.message) body.append(el("div", "text", ev.message));
+    } else if (ev.kind === "member") {
+      icon.textContent = "🎉";
+      title.append(el("bdi", "", ev.name));
+      body.append(title, el("div", "text", S.new_member || "New member"));
+    } else if (ev.kind === "ask") {
+      icon.textContent = "🤖";
+      title.append(el("bdi", "", ev.name), document.createTextNode(" " + (S.asked || "asked")));
+      body.append(title, el("div", "text", ev.question || ""), el("div", "answer", ev.answer || ""));
+    } else return null;
+    c.append(icon, body);
+    return c;
+  }
+
+  function showEvent(ev) {
+    if (!show.has(ev.kind)) return;
+    const c = card(ev);
+    if (!c) return;
+    stack.append(c);
+    while (stack.children.length > 3) stack.firstChild.remove();
+    setTimeout(() => { c.classList.add("out"); setTimeout(() => c.remove(), 450); }, seconds * 1000);
+  }
+
+  new EventSource("/events").onmessage = (m) => { try { showEvent(JSON.parse(m.data)); } catch (e) {} };
+
+  if (q.get("demo")) {  // ?demo=1 : sample alerts, to position and size the overlay in OBS
+    const samples = [
+      { kind: "super_chat", name: "Aarav", amount: "₹500", message: "Love the streams! 🔥" },
+      { kind: "ask", name: "Kenji", question: "Which IDE do you use?", answer: "VS Code with the Python extension 🙂" },
+      { kind: "member", name: "Sofia" },
+      { kind: "super_chat", name: "مريم", amount: "$5", message: "تحية من القاهرة 👋" },
+    ];
+    let i = 0;
+    const next = () => showEvent(samples[i++ % samples.length]);
+    next(); next(); next();
+    setInterval(next, 3000);
+  }
+})();
+</script>
+</body>
+</html>

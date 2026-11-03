@@ -1,0 +1,12 @@
+.env
+client_secret*.json
+data/
+reports/
+output/
+persona.suggested.yaml
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/

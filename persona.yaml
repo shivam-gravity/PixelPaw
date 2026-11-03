@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Your bot's personality. Everything here shapes how it talks as YOU.
+#  Tip: run `python -m pixelpaw persona-learn` to auto-draft this from your channel.
+# ─────────────────────────────────────────────────────────────────────────────
+
+channel:
+  name: "YOUR CHANNEL NAME"
+  handle: "@yourhandle"
+  niche: "what your videos are about, e.g. 'Python automation and AI side projects'"
+  audience: "who watches, e.g. 'CS students and junior developers in India'"
+  language: "English"
+
+voice:
+  tone: "friendly, genuine, a bit nerdy, never salesy"
+  style_rules:
+    - "Keep replies to 1-2 short sentences"
+    - "Use at most one emoji"
+    - "Address the viewer by their point, not with generic thanks"
+  never:
+    - "Promise sponsorships, collaborations, giveaways or upload dates"
+    - "Share personal information"
+    - "Argue with critics"
+    - "Invent facts about the video or about me"
+  signature: ""            # e.g. "– Shivam"; appended to every comment reply
+  max_reply_chars: 280
+  reply_in_commenter_language: true
+  examples: []             # paste 5-10 of your real replies here; persona-learn fills this for you
+
+# Facts the bot may use when answering questions. Anything not here -> it drafts for your review.
+faq:
+  - q: "What laptop / setup do you use?"
+    a: "TODO"
+  - q: "Where is the source code?"
+    a: "Link is in the description of each video"
+
+# Only these exact URLs will ever be shared.
+links:
+  github: ""
+  discord: ""
+  instagram: ""
+  website: ""
+
+comments:
+  mode: review             # review = drafts wait for `python -m pixelpaw review`; auto = post directly
+  reply_to: [question, praise, feedback]
+  review_negative: true    # negative comments always go to review, even in auto mode
+  max_replies_per_run: 20  # each reply costs 50 API quota units (10,000/day free)
+  max_replies_per_day: 60  # caps volume: high-volume automated replies count as spam on YouTube
+  reply_gap_seconds: 20    # spacing between auto-replies (no bot-like bursts)
+  min_comment_length: 3
+  lookback_hours: 72
+  max_pages: 3
+  check_every_minutes: 30
+  skip_authors: []         # e.g. ["@yourfriend"]
+
+live_chat:
+  auto_detect: true        # `run` starts the chat bot when you go live
+  detect_every_minutes: 3
+  poll_seconds_min: 6
+  greeting: "Hey everyone, welcome to the stream! Type !commands to see what I can do 👋"
+  ask_command: "!ask"
+  ask_cooldown_seconds: 30
+  min_seconds_between_bot_messages: 4
+  command_cooldown_seconds: 30   # same command answers at most once per 30s (no repetitive chat)
+  ai_label: "🤖"                 # prefix on AI !ask answers so viewers know it's the bot
+  delete_viewer_links: true      # remove links posted by viewers (mods/owner exempt)
+  commands:                # {name}, {channel}, {title} and any key from `links` are filled in
+    "!discord": "Join the community: {discord}"
+    "!github": "All the code: {github}"
+    "!socials": "Insta: {instagram} · Site: {website}"
+    "!setup": "Setup details are in the video description 🙂"
+  banned_words: []         # messages containing these are deleted (mods/owner exempt)
+  moderation_action: delete
+  thank_super_chats: true
+  super_chat_thanks: "Thank you so much {name} for the {amount} Super Chat! 🙏"
+  new_member_thanks: "Welcome to the membership, {name}! 🎉"
+
+report:
+  time: "09:00"            # local time (PIXELPAW_TIMEZONE in .env)
+  deliver_to: [file]       # any of: file, discord, telegram
+  sweep_comments_first: true
+  recent_uploads: 5
+
+# YouTube Community Guidelines (https://support.google.com/youtube/answer/9288567) are enforced
+# by pixelpaw/policy.py on everything the bot posts, and CANNOT be relaxed by anything in this file:
+#   - comments that break the guidelines are never replied to and are held for your review
+#   - every reply / chat message passes rule checks + an AI compliance review; if that review
+#     can't run, nothing is posted
+#   - links are only ever your own (from `links:` above)
+
+# Rules that act on comment content (like DailyBot Automations).
+#   when: category (question/praise/feedback/criticism/collab/spam/other), sentiment, contains_any, min_length
+#   then: notify, reply (true/false), review (true), moderate (heldForReview | rejected)
+automations:
+  - name: "Business inquiry"
+    when: { category: collab }
+    then: { notify: true, reply: false }
+  - name: "Spam"
+    when: { category: spam }
+    then: { reply: false, moderate: heldForReview }
+  - name: "Broken link report"
+    when: { contains_any: ["link not working", "broken link", "link is dead", "404"] }
+    then: { notify: true, review: true }
+  - name: "Harsh criticism"
+    when: { category: criticism, sentiment: negative }
+    then: { notify: true, review: true }
+
+# Interface language + OBS overlay.
+# Comment / chat replies are always in the viewer's own language, whatever you set here.
+ui:
+  language: en             # en hi es pt fr ar ja id, or any code after `python -m pixelpaw translate-ui <code>`
+  overlay:
+    show: [super_chat, member, ask]   # which alerts appear on stream
+    seconds: 8
+    position: bottom-left  # bottom-left | bottom-right | top-left | top-right | center
