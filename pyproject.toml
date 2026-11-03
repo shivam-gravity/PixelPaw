@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixelpaw"
+version = "1.0.0"
+description = "A lightweight, personalised YouTube channel bot: comment replies, live chat, OBS overlay, daily reports. Follows YouTube Community Guidelines."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+    "tzdata>=2024.1; sys_platform == 'win32'",
+]
+keywords = ["youtube", "bot", "obs", "live-chat", "gemini", "openai", "creator-tools"]
+
+[project.urls]
+Homepage = "https://github.com/shivam-srivastava-031/PixelPaw"
+
+[project.scripts]
+pixelpaw = "pixelpaw.__main__:main"
+
+[tool.setuptools]
+packages = ["pixelpaw"]
+
+[tool.setuptools.package-data]
+pixelpaw = ["locales/*.json", "web/*.html"]
