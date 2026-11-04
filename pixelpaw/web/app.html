@@ -78,12 +78,39 @@
   .faqrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-top: 6px; }
   @media (max-width: 520px) { .faqrow { grid-template-columns: 1fr; } }
   [hidden] { display: none !important; }
+  /* The OBS dock (?dock=panel): one compact window with everything; the plugin passes OBS's theme so it blends in. */
+  :root.light { --bg: #f6f6f9; --panel: #fff; --line: #e4e4ec; --text: #17171f; --muted: #6b6b7b; --soft: #f0eefb;
+                --accent: #7c3aed; --ok: #059669; --bad: #dc2626; --warn: #b45309; color-scheme: light; }
+  :root.dark { --bg: #14141c; --panel: #1e1e29; --line: #2e2e3d; --text: #ececf3; --muted: #9a9aad; --soft: #262338;
+               --accent: #a78bfa; --ok: #34d399; --bad: #f87171; --warn: #fbbf24; color-scheme: dark; }
+  :root.obs { --panel: color-mix(in srgb, var(--bg) 93%, var(--text)); --line: color-mix(in srgb, var(--bg) 82%, var(--text));
+              --muted: color-mix(in srgb, var(--text) 62%, var(--bg)); }
+  body.dock { padding: 6px; font-size: 13px; }
+  body.dock .wrap { max-width: none; }
+  body.dock header h1 { display: none; }
+  body.dock nav { margin-bottom: 8px; }
+  body.dock nav a { padding: 5px 9px; font-size: 12px; border-radius: 8px; }
+  body.dock header { justify-content: flex-end; margin-bottom: 6px; }
+  body.dock header .grow { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.dock section { padding: 10px; border-radius: 10px; }
+  body.dock .grid { gap: 8px; }
+  body.dock h2 { margin-bottom: 6px; }
+  body.dock button { min-height: 32px; padding: 6px 10px; border-radius: 8px; }
+  body.dock .banner { padding: 8px 10px; margin-bottom: 8px; }
+  body.dock ul.feed { max-height: none; }
+  body.dock .stats { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; }
+  body.dock .stat b { font-size: 16px; }
+  ul.feed time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-inline-end: 6px; }
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px 10px; }
+  .status div { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot.warn { background: var(--warn); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1 id="title">🐾 PixelPaw</h1>
+    <span id="hint" class="grow" hidden></span>
     <span id="live" class="badge">…</span>
     <span id="conn" class="dot" title=""></span>
   </header>
@@ -103,8 +130,27 @@
     for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(String(k)));
     return n;
   };
+  const P = new URLSearchParams(location.search);
+  // In the OBS dock, remember the dock settings for this browser, so pages reached from inside it
+  // (e.g. coming back from Google sign-in) stay in dock mode.
+  try {
+    if (P.get("dock")) sessionStorage.setItem("pp_dock", location.search);
+    else if (sessionStorage.getItem("pp_dock")) {
+      new URLSearchParams(sessionStorage.getItem("pp_dock")).forEach((v, k) => { if (!P.has(k)) P.set(k, v); });
+      history.replaceState(null, "", "?" + P.toString() + location.hash);
+    }
+  } catch (e) {}
+  const DOCK = P.get("dock") ? "panel" : "";  // older plugin builds asked for activity/controls/drafts
+  {
+    const root = document.documentElement, hex = (v) => (/^[0-9a-f]{6}$/i.test(v || "") ? "#" + v : "");
+    if (["dark", "light"].includes(P.get("theme"))) root.classList.add(P.get("theme"));
+    if (hex(P.get("bg")) && hex(P.get("fg"))) {
+      root.classList.add("obs"); root.style.setProperty("--bg", hex(P.get("bg"))); root.style.setProperty("--text", hex(P.get("fg")));
+    }
+    if (DOCK) document.body.classList.add("dock", "dock-" + DOCK);
+  }
   const cfg = await fetch("/api/config").then(r => r.json()).catch(() => ({ lang: "en" }));
-  const lang = new URLSearchParams(location.search).get("lang") || cfg.lang || "en";
+  const lang = P.get("lang") || cfg.lang || "en";
   const S = await fetch("/api/i18n?lang=" + encodeURIComponent(lang)).then(r => r.json()).catch(() => ({}));
   const t = (s) => (S.app && S.app[s]) || S[s] || s;
   document.documentElement.lang = lang; document.documentElement.dir = S._dir || "ltr";
@@ -129,7 +175,7 @@
 
   // ---------------- state, nav, live updates ----------------
   let state = {};
-  const TABS = [["home", "Home"], ["drafts", "Drafts"], ["create", "Create"], ["health", "Health"], ["settings", "Settings"], ["setup", "Setup"]];
+  const TABS = [DOCK ? ["live", "Live"] : ["home", "Home"], ["drafts", "Drafts"], ["create", "Create"], ["health", "Health"], ["settings", "Settings"], ["setup", "Setup"]];
   function renderNav() {
     const cur = route().tab;
     $("#nav").replaceChildren(...TABS.map(([id, label]) => {
@@ -146,6 +192,7 @@
   async function loadState() {
     state = await api("/api/state");
     $("#title").textContent = "🐾 " + state.channel;
+    if (DOCK) { $("#hint").hidden = false; $("#hint").textContent = "🐾 " + state.channel; }
     setLive(state.live); renderNav();
     return state;
   }
@@ -163,7 +210,8 @@
     }
   }
   function feedLine(ev) {
-    return el("li", { text: `${new Date(ev.ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}  ${describe(ev)}` });
+    return el("li", {}, el("time", {}, new Date(ev.ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })),
+      el("span", { text: describe(ev) }));
   }
   function connect() {
     const es = new EventSource("/api/events");
@@ -173,8 +221,9 @@
       const ev = JSON.parse(m.data);
       feedItems.unshift(ev); feedItems.length = Math.min(feedItems.length, 80);
       if (ev.kind === "live") setLive(ev);
-      const feed = $("#feed"); if (feed) { feed.prepend(feedLine(ev)); }
-      if (ev.kind === "replied" || ev.kind === "alert") { loadState().catch(() => {}); if (route().tab === "drafts") render(); }
+      const feed = $("#feed"); if (feed) { feed.querySelector("li.muted")?.remove(); feed.prepend(feedLine(ev)); }
+      if (ev.kind === "replied" || ev.kind === "alert") { loadState().catch(() => {}); if (["drafts", "live"].includes(current()) && !editing()) render(); }
+      else if (ev.kind === "live" && current() === "live" && !editing()) render();
     };
   }
 
@@ -183,13 +232,19 @@
     const [tab, qs] = (location.hash.slice(1) || "").split("?");
     return { tab: TABS.some(([id]) => id === tab) ? tab : "", q: new URLSearchParams(qs || "") };
   }
+  // Don't redraw under someone typing a reply or holding a menu open.
+  const editing = () => { const a = document.activeElement; return !!a && $("#view").contains(a) && ["TEXTAREA", "INPUT", "SELECT"].includes(a.tagName); };
+  const current = () => route().tab || (state.setup && !state.setup.complete ? "setup" : DOCK ? "live" : "home");
+  let renderSeq = 0;
   async function render() {
-    let { tab } = route();
-    if (!tab) tab = state.setup && !state.setup.complete ? "setup" : "home";
+    const seq = ++renderSeq, tab = current();
     renderNav();
     const view = $("#view");
-    view.replaceChildren(el("p", { class: "muted" }, "…"));
-    try { view.replaceChildren(await PAGES[tab]()); } catch (e) { if (e.message !== "401") view.replaceChildren(el("p", { class: "bad", text: String(e) })); }
+    if (!(DOCK && view.dataset.tab === tab)) view.replaceChildren(el("p", { class: "muted" }, "…"));  // the dock refreshes a tab in place
+    let node;
+    try { node = await PAGES[tab](); } catch (e) { if (e.message === "401") return; node = el("p", { class: "bad", text: String(e) }); }
+    if (seq !== renderSeq) return;  // a newer render started meanwhile
+    view.replaceChildren(node); view.dataset.tab = tab;
     [...$("#nav").children].forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + tab));
   }
   window.addEventListener("hashchange", render);
@@ -437,7 +492,8 @@
     const signIn = el("button", { class: "primary", disabled: !st.client_secret, onclick: () => { location.href = "/oauth/start"; } }, "🔐 " + t("Sign in with Google"));
     box.append(step(2, st.youtube, "Connect your YouTube channel", guide, field("Google client file (client_secret.json)", file), ytMsg,
       el("div", { class: "row" }, signIn, st.youtube ? el("span", { class: "ok" }, "✔ " + t("Connected")) : null),
-      el("small", {}, t("Google may show 'unverified app': that's your own app, click Continue."))));
+      el("small", {}, t("Google may show 'unverified app': that's your own app, click Continue.")),
+      DOCK ? el("small", { style: "display:block" }, t("If Google won't sign in inside OBS, use Tools → PixelPaw → Open PixelPaw in browser.")) : null));
 
     // 3. Persona
     const learnMsg = el("span", { class: "msg" }), preview = el("div", {});
@@ -459,7 +515,7 @@
     box.append(step(4, false, "Add it to OBS (optional)", el("ol", {},
       el("li", {}, t("In OBS: Tools → Scripts → + → choose"), " ", el("b", {}, "obs/pixelpaw.lua"), " ", t("from the PixelPaw folder")),
       el("li", {}, t("Tick 'Start PixelPaw when OBS starts', then click 'Add overlay to current scene'")),
-      el("li", {}, t("Optional dock: View → Docks → Custom Browser Docks → name PixelPaw, URL below"))),
+      el("li", {}, t("Or install the PixelPaw OBS plugin (obs/plugin in the PixelPaw folder): PixelPaw then gets its own dock in OBS"))),
       field("Overlay URL", copyBox(sys.overlay_url)), field("Dock URL", copyBox(sys.dock_url)),
       el("div", { class: "row" }, el("button", { onclick: () => api("/api/test", {}) }, t("send_test")))));
 
@@ -467,11 +523,49 @@
     return box;
   };
 
+  // ---------------- OBS dock: Live tab ----------------
+  // Everything needed while streaming, in the order you need it: status + actions, activity, today.
+  const names = { youtube: "YouTube", ai: "AI model", live_chat: "Live chat", overlay: "OBS overlay" };
+  PAGES.live = async () => {
+    await loadState();
+    const h = await api("/api/health"), s = state, q = s.quota, ai = s.ai;
+    const out = el("div", { class: "grid" });
+    if (!s.setup.complete) out.append(el("div", { class: "banner" }, el("b", {}, t("Finish setup to start the bot")), " ",
+      el("button", { class: "primary", onclick: () => location.hash = "#setup" }, t("Continue setup"))));
+    const msg = el("span", { class: "msg" });
+    out.append(el("section", {},
+      el("div", { class: "status" }, ...Object.entries(names).map(([k, label]) => { const c = h.components[k] || {};
+        const dot = c.status === "ok" ? "on" : c.status === "error" ? "off" : c.status === "warn" ? "warn" : "";
+        return el("div", { title: c.detail || "" }, el("span", { class: "dot " + dot }), t(label)); })),
+      el("div", { class: "row" },
+        el("button", { class: "primary", onclick: (e) => busy(e.target, async () => { say(msg, "", "…"); const r = await api("/api/action/sweep", {});
+          say(msg, r.ok ? "ok" : "bad", r.ok ? `✔ ${t("New")}: ${r.result.new} · ${t("replied")}: ${r.result.replied} · ${t("drafts")}: ${r.result.drafted}` : r.error); loadState(); }) }, t("Check comments now")),
+        el("button", { onclick: (e) => busy(e.target, async () => { const r = await api("/api/test", {}); say(msg, r.ok ? "ok" : "bad", r.ok ? "✔ " + t("Test alert sent") : r.error); }) }, t("send_test")),
+        s.pending ? el("button", { onclick: () => location.hash = "#drafts" }, `${t("drafts")} (${fmt(s.pending)})`) : null), msg));
+    const feed = el("ul", { class: "feed", id: "feed" });
+    (feedItems.length ? feedItems : [...s.recent].reverse()).forEach(ev => feed.append(feedLine(ev)));
+    if (!feed.children.length) feed.append(el("li", { class: "muted" }, t("no_activity")));
+    out.append(el("section", {}, el("h2", {}, t("activity")), feed));
+    const mode = el("select", {}, el("option", { value: "review" }, t("Review first (recommended)")), el("option", { value: "auto" }, t("Automatic")));
+    mode.value = s.mode;
+    const modeMsg = el("span", { class: "msg" });
+    mode.onchange = async () => { const r = await api("/api/settings", { comments: { mode: mode.value } });
+      say(modeMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + t("Saved") : r.error); };
+    out.append(el("section", {}, el("h2", {}, t("Today")),
+      el("div", {}, t("YouTube quota"), ` · ${fmt(q.total)} / ${fmt(q.limit)}`), el("div", { class: "meter" }, el("i", { style: `width:${Math.min(100, 100 * q.total / q.limit)}%` })),
+      el("div", {}, t("AI answers"), ` · ${fmt(ai.calls)} / ${fmt(ai.limit)}`), el("div", { class: "meter" }, el("i", { style: `width:${ai.limit ? Math.min(100, 100 * ai.calls / ai.limit) : 0}%` })),
+      field("Reply mode", mode), modeMsg));
+    return out;
+  };
+
   // ---------------- boot ----------------
   try { await loadState(); } catch (e) { if (e.message === "401") { $("#view").replaceChildren(); return; } }
   connect();
   render();
-  setInterval(() => { if (route().tab === "home" || !route().tab) loadState().catch(() => {}); }, 60000);
+  setInterval(() => {
+    if (current() === "live" && !editing()) render();
+    else if (current() === "home") loadState().catch(() => {});
+  }, DOCK ? 30000 : 60000);
 })();
 </script>
 </body>

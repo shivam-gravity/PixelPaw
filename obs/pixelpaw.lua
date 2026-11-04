@@ -31,6 +31,47 @@ local function file_exists(path)
   return false
 end
 
+-- Starts a program without handing it OBS's open files and sockets (os.execute would: the child then keeps
+-- OBS's ports busy after OBS closes). LuaJIT FFI + ShellExecuteW on Windows; tests replace pixelpaw_spawn.
+local native_spawn
+if is_windows then
+  local ok, ffi = pcall(require, "ffi")
+  if ok then
+    pcall(ffi.cdef, [[
+      int MultiByteToWideChar(unsigned int cp, unsigned long flags, const char *s, int n, wchar_t *w, int wn);
+      void *ShellExecuteW(void *hwnd, const wchar_t *op, const wchar_t *file, const wchar_t *params, const wchar_t *dir, int show);
+    ]])
+    local loaded, shell32 = pcall(ffi.load, "shell32")
+    local function wide(s)
+      local n = ffi.C.MultiByteToWideChar(65001, 0, s, -1, nil, 0)
+      local buf = ffi.new("wchar_t[?]", n)
+      ffi.C.MultiByteToWideChar(65001, 0, s, -1, buf, n)
+      return buf
+    end
+    if loaded then
+      native_spawn = function(file, params, dir, visible)
+        local h = shell32.ShellExecuteW(nil, wide("open"), wide(file), wide(params), wide(dir), visible and 1 or 0)
+        return tonumber(ffi.cast("intptr_t", h)) > 32
+      end
+    end
+  end
+end
+
+local function spawn(file, params, dir, visible)
+  local custom = rawget(_G, "pixelpaw_spawn")
+  if custom then return custom(file, params, dir, visible) end
+  if native_spawn then return native_spawn(file, params, dir, visible) end
+  if is_windows then
+    return os.execute('start "" /D "' .. dir .. '" "' .. file .. '" ' .. params)
+  end
+  return os.execute('cd "' .. dir .. '" && sh "' .. file .. '" ' .. params .. ' >/dev/null 2>&1 &')
+end
+
+-- The native PixelPaw plugin (obs/plugin) already starts PixelPaw; don't do it twice.
+local function plugin_loaded()
+  return obs.obs_get_module ~= nil and obs.obs_get_module("pixelpaw") ~= nil
+end
+
 local function launch(open_dashboard)
   if folder == "" then folder = default_folder() end
   local sep = is_windows and "\\" or "/"
@@ -39,20 +80,21 @@ local function launch(open_dashboard)
     obs.script_log(obs.LOG_WARNING, "PixelPaw: PixelPaw.pyw not found in " .. folder .. " (set the folder in the script settings)")
     return
   end
-  local flag = open_dashboard and "" or " --no-browser"
-  local cmd
+  local flag = open_dashboard and "" or "--no-browser"
+  local ok
   if is_windows then
     local pythonw = folder .. "\\.venv\\Scripts\\pythonw.exe"
     if file_exists(pythonw) then
-      cmd = 'start "" /D "' .. folder .. '" "' .. pythonw .. '" "' .. pyw .. '"' .. flag
+      ok = spawn(pythonw, '"' .. pyw .. '" ' .. flag, folder, false)
     else  -- first run: the installer window appears once
-      cmd = 'start "" /D "' .. folder .. '" "' .. folder .. '\\PixelPaw.cmd"' .. flag
+      ok = spawn(folder .. "\\PixelPaw.cmd", flag, folder, true)
     end
   else
-    cmd = 'cd "' .. folder .. '" && sh ./PixelPaw.command' .. flag .. ' >/dev/null 2>&1 &'
+    ok = spawn(folder .. "/PixelPaw.command", flag, folder, false)
   end
-  os.execute(cmd)  -- PixelPaw is single-instance: launching it again only opens the dashboard
-  obs.script_log(obs.LOG_INFO, "PixelPaw: started" .. (open_dashboard and " (opening dashboard)" or ""))
+  -- PixelPaw is single-instance: launching it again only opens the dashboard
+  obs.script_log(ok and obs.LOG_INFO or obs.LOG_WARNING,
+    "PixelPaw: " .. (ok and "started" or "could not start") .. (open_dashboard and " (opening dashboard)" or ""))
 end
 
 function script_description()
@@ -88,7 +130,13 @@ end
 
 function script_load(settings)
   script_update(settings)
-  if autostart then launch(false) end
+  if autostart then
+    if plugin_loaded() then
+      obs.script_log(obs.LOG_INFO, "PixelPaw: the PixelPaw plugin is installed and starts PixelPaw; this script only adds buttons")
+    else
+      launch(false)
+    end
+  end
 end
 
 local function canvas_size()

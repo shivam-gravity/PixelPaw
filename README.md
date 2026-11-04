@@ -36,6 +36,28 @@ That's it. PixelPaw works in the background from now on. To open it again, doubl
 
 ## 🎥 OBS
 
+### PixelPaw plugin (Windows, OBS 30+): one PixelPaw dock
+
+The plugin adds a single **PixelPaw** dock to OBS, just like YouTube Chat, Scenes and Controls: drag it, tab it, or show and hide it under **Docks**.
+It starts in the bottom row beside OBS's **Controls**, so it never covers your chat, and it holds everything in one window:
+
+| Tab | What's there |
+|---|---|
+| **Live** | status lights (YouTube, AI, live chat, overlay), *Check comments now*, *Send test alert*, the live activity feed (`!ask` answers, Super Chats, members, replies, alerts), today's budgets and reply mode |
+| **Drafts** | reply drafts to approve or discard |
+| **Create**, **Health**, **Settings**, **Setup** | the same pages as the full dashboard |
+
+It also starts PixelPaw with OBS and adds **Tools → PixelPaw** (show the dock, open PixelPaw in your browser, add the alerts overlay, reload, start PixelPaw).
+The dock only opens a browser while it's visible and PixelPaw is running, and OBS remembers wherever you move it.
+
+Build and install it (needs Visual Studio Build Tools with C++; close OBS first):
+```powershell
+powershell -ExecutionPolicy Bypass -File obs\plugin\build.ps1 -Install
+```
+This installs into `C:\ProgramData\obs-studio\plugins\pixelpaw` (no admin rights needed). `python -m pixelpaw.obsplugin status|uninstall` checks or removes it. Problems show in OBS's log (*Help → Log Files*) as lines starting with `[PixelPaw]`.
+
+### Script (any OS, no build)
+
 In OBS: **Tools → Scripts → `+`** → choose [`obs/pixelpaw.lua`](obs/pixelpaw.lua) in the PixelPaw folder. Then:
 
 - ☑ **Start PixelPaw when OBS starts**: PixelPaw runs whenever OBS is open, with no separate launch.

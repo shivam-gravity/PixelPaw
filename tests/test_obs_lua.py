@@ -24,6 +24,7 @@ local function log(...) local t = {...}; for i = 1, #t do t[i] = tostring(t[i]) 
 local sources, scene_items, refcount = {}, {}, 0
 local function new_data() return {strings = {}, ints = {}, bools = {}} end
 os.execute = function(cmd) log("exec", cmd); return true end
+pixelpaw_spawn = function(file, params, dir, visible) log("exec", file .. " " .. params .. " in " .. dir); return true end
 function script_path() return SCRIPT_DIR end
 obslua = {
   OBS_TEXT_DEFAULT = 0, OBS_PATH_DIRECTORY = 2, LOG_INFO = 300, LOG_WARNING = 200,
@@ -99,10 +100,19 @@ assert sum(x.startswith("add_to_scene") for x in c) == 1
 assert any(x.startswith("refresh") for x in c)
 assert g.get_refcount() == 0, f"leaked OBS references: {g.get_refcount()}"
 
+# With the native plugin loaded, the script doesn't start PixelPaw a second time.
+g.obslua.obs_get_module = lua.eval('function(name) if name == "pixelpaw" then return {} end end')
+before = len(calls())
+g.script_load(settings)
+assert not any(x.startswith("exec ") for x in calls()[before:]), calls()[before:]
+assert "plugin is installed" in calls()[-1], calls()[-1]
+g.obslua.obs_get_module = None
+
 settings.strings["folder"] = "C:/does/not/exist"
 settings.bools["autostart"] = True
 g.script_load(settings)
 assert "not found" in calls()[-1], calls()[-1]
 print("✔ OBS script: syntax, buttons, auto-start (background), Open PixelPaw, overlay in URL mode,")
-print("  canvas-sized, no duplicates, no reference leaks, clear message when the folder is wrong")
+print("  canvas-sized, no duplicates, no reference leaks, clear message when the folder is wrong,")
+print("  no second launch when the native plugin is loaded")
 print("\nOBS LUA TEST PASSED")
