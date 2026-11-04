@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14141c">
+<title>PixelPaw</title>
+<style>
+  :root {
+    --bg: #f6f6f9; --panel: #fff; --line: #e4e4ec; --text: #17171f; --muted: #6b6b7b; --soft: #f0eefb;
+    --accent: #7c3aed; --ok: #059669; --bad: #dc2626; --warn: #b45309; --live: #e11d48;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Sans Arabic",
+            "Noto Sans JP", "Noto Sans KR", "Noto Sans SC", "Noto Sans Thai", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14141c; --panel: #1e1e29; --line: #2e2e3d; --text: #ececf3; --muted: #9a9aad; --soft: #262338;
+            --accent: #a78bfa; --ok: #34d399; --bad: #f87171; --warn: #fbbf24; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font);
+         padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+                  max(16px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.live { background: var(--live); color: #fff; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
+  nav { display: flex; gap: 4px; overflow-x: auto; margin: 0 0 12px; padding-bottom: 2px; scrollbar-width: none; }
+  nav a { flex: none; text-decoration: none; color: var(--muted); font-weight: 600; padding: 8px 12px; border-radius: 10px; }
+  nav a.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--line); }
+  nav a .n { background: var(--accent); color: #fff; border-radius: 99px; padding: 0 6px; font-size: 11px; margin-inline-start: 4px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .grid.two { grid-template-columns: 1fr 1fr; } .wide { grid-column: 1 / -1; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; min-width: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  h3 { font-size: 15px; margin: 0 0 6px; }
+  p { margin: 6px 0; } .muted { color: var(--muted); } small { color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .meter { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 4px 0; }
+  .meter i { display: block; height: 100%; background: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  label.inline { display: inline-flex; gap: 6px; align-items: center; font-weight: 500; margin: 4px 12px 4px 0; }
+  input[type=text], input[type=password], input[type=number], input[type=time], select, textarea {
+    width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
+  textarea { min-height: 70px; resize: vertical; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 14px; min-height: 42px;
+           cursor: pointer; background: var(--line); color: var(--text); }
+  button.primary { background: var(--accent); color: #fff; }
+  button.danger { background: transparent; color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+  button:disabled { opacity: .55; cursor: progress; }
+  .msg { font-size: 13px; overflow-wrap: anywhere; } .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .note { font-size: 12px; color: var(--warn); margin-top: 4px; overflow-wrap: anywhere; }
+  .draft { border-top: 1px solid var(--line); padding: 12px 0; } .draft:first-child { border-top: 0; padding-top: 0; }
+  .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  ul.feed { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow: auto; }
+  ul.feed li { padding: 7px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; } ul.feed li:first-child { border-top: 0; }
+  pre.out { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+            padding: 10px; max-height: 60vh; overflow: auto; font: 13px/1.5 var(--font); }
+  .step { display: flex; gap: 12px; } .step + .step { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .step > .num { flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+         background: var(--soft); color: var(--accent); }
+  .step > .num.done { background: var(--ok); color: #fff; }
+  .step > div + div { flex: 1; min-width: 0; }
+  .pill { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--line); }
+  .pill.ok { background: rgba(5,150,105,.15); } .pill.warn { background: rgba(180,83,9,.15); } .pill.error { background: rgba(220,38,38,.15); color: var(--bad); }
+  .comp { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .comp:first-child { border-top: 0; } .comp div { min-width: 0; overflow-wrap: anywhere; }
+  .copy { display: flex; gap: 6px; } .copy input { flex: 1; min-width: 0; }
+  details { margin: 8px 0; } summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  ol { padding-inline-start: 20px; margin: 6px 0; } li { margin: 3px 0; }
+  .banner { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .faqrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-top: 6px; }
+  @media (max-width: 520px) { .faqrow { grid-template-columns: 1fr; } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">🐾 PixelPaw</h1>
+    <span id="live" class="badge">…</span>
+    <span id="conn" class="dot" title=""></span>
+  </header>
+  <nav id="nav"></nav>
+  <div id="signedout" class="banner" hidden></div>
+  <main id="view"></main>
+</div>
+<script>
+(async () => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const el = (tag, attrs = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "class") n.className = v; else if (k === "text") { n.textContent = v; n.dir = "auto"; }
+      else if (k.startsWith("on")) n[k] = v; else if (v !== false && v != null) n.setAttribute(k, v === true ? "" : v);
+    }
+    for (const k of kids.flat()) if (k != null) n.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return n;
+  };
+  const cfg = await fetch("/api/config").then(r => r.json()).catch(() => ({ lang: "en" }));
+  const lang = new URLSearchParams(location.search).get("lang") || cfg.lang || "en";
+  const S = await fetch("/api/i18n?lang=" + encodeURIComponent(lang)).then(r => r.json()).catch(() => ({}));
+  const t = (s) => (S.app && S.app[s]) || S[s] || s;
+  document.documentElement.lang = lang; document.documentElement.dir = S._dir || "ltr";
+  const fmt = (n) => (n == null ? "–" : Number(n).toLocaleString(lang));
+
+  async function api(path, body) {
+    const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    const r = await fetch(path, opts);
+    if (r.status === 401) { showSignedOut(); throw new Error("401"); }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok && !data.error) data.error = "HTTP " + r.status;
+    return data;
+  }
+  function showSignedOut() {
+    const b = $("#signedout"); b.hidden = false;
+    b.textContent = t("Not signed in. On the computer running PixelPaw, open it from its shortcut. On a phone, use the phone link from Settings → Phone access.");
+  }
+  const busy = async (btn, fn) => { btn.disabled = true; try { return await fn(); } finally { btn.disabled = false; } };
+  const copyBox = (value) => { const i = el("input", { type: "text", value, readonly: true });
+    return el("div", { class: "copy" }, i, el("button", { onclick: () => { i.select(); navigator.clipboard?.writeText(value); } }, t("Copy"))); };
+  const say = (node, cls, text) => { node.className = "msg " + cls; node.textContent = text; };
+
+  // ---------------- state, nav, live updates ----------------
+  let state = {};
+  const TABS = [["home", "Home"], ["drafts", "Drafts"], ["create", "Create"], ["health", "Health"], ["settings", "Settings"], ["setup", "Setup"]];
+  function renderNav() {
+    const cur = route().tab;
+    $("#nav").replaceChildren(...TABS.map(([id, label]) => {
+      const a = el("a", { href: "#" + id, class: id === cur ? "on" : "" }, t(label));
+      if (id === "drafts" && state.pending) a.append(el("span", { class: "n" }, state.pending));
+      if (id === "setup" && state.setup && !state.setup.complete) a.append(" ⚠️");
+      return a;
+    }));
+  }
+  function setLive(live) {
+    $("#live").textContent = live && live.active ? "● " + t("live_now") : t("offline");
+    $("#live").className = "badge" + (live && live.active ? " live" : "");
+  }
+  async function loadState() {
+    state = await api("/api/state");
+    $("#title").textContent = "🐾 " + state.channel;
+    setLive(state.live); renderNav();
+    return state;
+  }
+  const feedItems = [];
+  function describe(ev) {
+    switch (ev.kind) {
+      case "super_chat": return `💛 ${t("super_chat")} · ${ev.name} ${ev.amount || ""} ${ev.message || ""}`;
+      case "member": return `🎉 ${t("new_member")} · ${ev.name}`;
+      case "ask": return `🤖 ${ev.name} ${t("asked")}: ${ev.question} → ${ev.answer}`;
+      case "replied": return `💬 ${ev.author}: ${ev.text} → ${ev.reply}`;
+      case "alert": return `🔔 ${t("alert")}: ${ev.text}`;
+      case "live": return ev.active ? `● ${t("live_now")}: ${ev.title}` : `○ ${t("offline")}`;
+      case "test": return `🐾 ${ev.message}`;
+      default: return ev.kind;
+    }
+  }
+  function feedLine(ev) {
+    return el("li", { text: `${new Date(ev.ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}  ${describe(ev)}` });
+  }
+  function connect() {
+    const es = new EventSource("/api/events");
+    es.onopen = () => { $("#conn").className = "dot on"; $("#conn").title = t("connected"); };
+    es.onerror = () => { $("#conn").className = "dot off"; $("#conn").title = t("reconnecting"); };
+    es.onmessage = (m) => {
+      const ev = JSON.parse(m.data);
+      feedItems.unshift(ev); feedItems.length = Math.min(feedItems.length, 80);
+      if (ev.kind === "live") setLive(ev);
+      const feed = $("#feed"); if (feed) { feed.prepend(feedLine(ev)); }
+      if (ev.kind === "replied" || ev.kind === "alert") { loadState().catch(() => {}); if (route().tab === "drafts") render(); }
+    };
+  }
+
+  // ---------------- routing ----------------
+  function route() {
+    const [tab, qs] = (location.hash.slice(1) || "").split("?");
+    return { tab: TABS.some(([id]) => id === tab) ? tab : "", q: new URLSearchParams(qs || "") };
+  }
+  async function render() {
+    let { tab } = route();
+    if (!tab) tab = state.setup && !state.setup.complete ? "setup" : "home";
+    renderNav();
+    const view = $("#view");
+    view.replaceChildren(el("p", { class: "muted" }, "…"));
+    try { view.replaceChildren(await PAGES[tab]()); } catch (e) { if (e.message !== "401") view.replaceChildren(el("p", { class: "bad", text: String(e) })); }
+    [...$("#nav").children].forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + tab));
+  }
+  window.addEventListener("hashchange", render);
+
+  // ---------------- pages ----------------
+  const PAGES = {};
+
+  PAGES.home = async () => {
+    await loadState();
+    const s = state, snap = s.snapshot || {};
+    const out = el("div", { class: "grid two" });
+    if (!s.setup.complete) out.append(el("section", { class: "wide banner" },
+      el("h3", {}, t("Finish setup to start the bot")), el("p", { class: "muted" }, t("It takes about 10 minutes, once.")),
+      el("button", { class: "primary", onclick: () => location.hash = "#setup" }, t("Continue setup"))));
+    out.append(el("section", { class: "wide" }, el("h2", {}, t("channel")),
+      el("div", { class: "stats" },
+        ...[[fmt(snap.subscribers), t("subscribers")], [fmt(snap.views), t("total_views")], [fmt(snap.videos), t("videos")],
+            [fmt(s.pending), t("drafts")], [s.mode === "auto" ? t("Automatic") : t("Review first"), t("Reply mode")]]
+          .map(([v, l]) => el("div", { class: "stat" }, el("b", {}, v), el("span", {}, l))))));
+    const q = s.quota, ai = s.ai;
+    const msg = el("span", { class: "msg" });
+    out.append(el("section", {}, el("h2", {}, t("Today")),
+      el("div", {}, t("YouTube quota"), ` · ${fmt(q.total)} / ${fmt(q.limit)}`), el("div", { class: "meter" }, el("i", { style: `width:${Math.min(100, 100 * q.total / q.limit)}%` })),
+      el("small", {}, `${t("Live chat reserve")}: ${fmt(q.live_reserve)} · ${t("resets at midnight Pacific")}`),
+      el("div", { style: "margin-top:10px" }, t("AI answers"), ` · ${fmt(ai.calls)} / ${fmt(ai.limit)} · ${t("free from FAQ/cache")}: ${fmt(ai.cached)}`),
+      el("div", { class: "meter" }, el("i", { style: `width:${ai.limit ? Math.min(100, 100 * ai.calls / ai.limit) : 0}%` })),
+      el("div", { class: "row" },
+        el("button", { onclick: (e) => busy(e.target, async () => { say(msg, "", "…"); const r = await api("/api/action/sweep", {});
+          say(msg, r.ok ? "ok" : "bad", r.ok ? `✔ ${t("New")}: ${r.result.new} · ${t("replied")}: ${r.result.replied} · ${t("drafts")}: ${r.result.drafted}` : r.error); loadState(); }) }, t("Check comments now")),
+        el("button", { onclick: () => location.hash = "#create" }, t("Daily report")),
+        el("button", { onclick: () => api("/api/test", {}) }, t("send_test"))), msg));
+    const feed = el("ul", { class: "feed", id: "feed" });
+    (feedItems.length ? feedItems : [...s.recent].reverse()).forEach(ev => feed.append(feedLine(ev)));
+    if (!feed.children.length) feed.append(el("li", { class: "muted" }, t("no_activity")));
+    out.append(el("section", {}, el("h2", {}, t("activity")), feed));
+    return out;
+  };
+
+  PAGES.drafts = async () => {
+    const rows = await api("/api/drafts");
+    const box = el("section", {}, el("h2", {}, t("drafts")));
+    if (!rows.length) box.append(el("p", { class: "muted" }, t("no_drafts")));
+    rows.forEach((r) => {
+      const ta = el("textarea", { dir: "auto" }); ta.value = r.draft || "";
+      const msg = el("span", { class: "msg" });
+      const ok = el("button", { class: "primary" }, t("approve")), no = el("button", {}, t("discard"));
+      const d = el("div", { class: "draft" }, el("div", { class: "meta", text: `${r.author} · ${r.video_title || ""} · ${r.category || ""}` }),
+        el("p", { text: r.text }), r.note ? el("div", { class: "note", text: r.note }) : null, ta, el("div", { class: "row" }, ok, no, msg));
+      let force = false;
+      ok.onclick = () => busy(ok, async () => {
+        say(msg, "", "…");
+        const res = await api(`/api/drafts/${encodeURIComponent(r.id)}/approve`, { text: ta.value, force });
+        if (res.status === "posted") { say(msg, "ok", "✔ " + t("posted")); setTimeout(() => { d.remove(); loadState(); }, 900); }
+        else if (res.status === "warn") { force = true; ok.textContent = t("approve") + " ⚠️"; say(msg, "warn", "⚠️ " + res.message); }
+        else say(msg, "bad", (res.status === "blocked" ? "⛔ " + t("blocked") + ": " : "✖ ") + (res.message || res.error));
+      });
+      no.onclick = () => busy(no, async () => { await api(`/api/drafts/${encodeURIComponent(r.id)}/discard`, {}); d.remove(); loadState(); });
+      box.append(d);
+    });
+    return box;
+  };
+
+  PAGES.create = async () => {
+    const out = el("div", { class: "grid two" });
+    const mk = (title, desc, fields, action, buildBody) => {
+      const res = el("pre", { class: "out", hidden: true }), msg = el("span", { class: "msg" });
+      const btn = el("button", { class: "primary" }, t(action));
+      btn.onclick = () => busy(btn, async () => {
+        say(msg, "", t("Working… this can take a minute")); res.hidden = true;
+        const r = await api(...buildBody());
+        if (r.ok) { res.textContent = r.text; res.hidden = false; say(msg, "ok", ""); } else say(msg, "bad", r.error || "error");
+      });
+      return el("section", {}, el("h2", {}, t(title)), el("p", { class: "muted" }, t(desc)), ...fields, el("div", { class: "row" }, btn, msg), res,
+        el("div", { class: "row" }, el("button", { onclick: () => navigator.clipboard?.writeText(res.textContent) }, t("Copy"))));
+    };
+    const count = el("input", { type: "number", value: 8, min: 1, max: 20 }), theme = el("input", { type: "text", placeholder: t("optional, e.g. beginner tutorials") });
+    out.append(mk("Video ideas", "From your best videos and what viewers keep asking.", [el("label", {}, t("How many")), count, el("label", {}, t("Theme")), theme],
+      "Get ideas", () => ["/api/action/ideas", { count: +count.value, theme: theme.value }]));
+    const topic = el("input", { type: "text", placeholder: t("What is the video about?") }), tr = el("textarea", { placeholder: t("Paste the script or transcript (optional, timestamps become chapters)") });
+    out.append(mk("Upload package", "Titles, description, tags, chapters, thumbnail text and a pinned comment, checked against YouTube's rules.",
+      [el("label", {}, t("Topic")), topic, el("label", {}, t("Transcript")), tr], "Create package", () => ["/api/action/package", { topic: topic.value, transcript: tr.value }]));
+    out.append(mk("Daily report", "Your channel briefing. It is also sent automatically every day.", [], "Run report now", () => ["/api/action/report", { send: true }]));
+    return out;
+  };
+
+  PAGES.health = async () => {
+    const h = await api("/api/health");
+    const pill = (s) => el("span", { class: "pill " + s }, s === "ok" ? "✔ OK" : s === "warn" ? "⚠ " + t("Warning") : s === "error" ? "✖ " + t("Problem") : "…");
+    const names = { youtube: "YouTube", ai: t("AI model"), live_chat: t("Live chat"), web: t("Dashboard"), overlay: t("OBS overlay"), setup: t("Setup") };
+    const comps = Object.entries(h.components).sort();
+    const up = h.uptime_s > 3600 ? `${Math.floor(h.uptime_s / 3600)}h ${Math.floor(h.uptime_s % 3600 / 60)}m` : `${Math.floor(h.uptime_s / 60)}m`;
+    const out = el("div", { class: "grid two" });
+    out.append(el("section", { class: "wide" }, el("h2", {}, t("Status")), el("div", { class: "row" }, pill(h.status),
+      el("span", { class: "muted" }, `${t("Running for")} ${up} · v${h.version} · ${t("errors (24h)")}: ${h.counts_24h.error} · ${t("warnings")}: ${h.counts_24h.warning}`))));
+    out.append(el("section", {}, el("h2", {}, t("Components")), ...comps.map(([k, c]) =>
+      el("div", { class: "comp" }, el("div", {}, el("b", {}, names[k] || k.replace("job:", t("Routine") + ": ")), el("div", { class: "meta", text: c.detail || "" })), pill(c.status)))));
+    out.append(el("section", {}, el("h2", {}, t("Routines")), ...(h.jobs.length ? h.jobs.map(j => el("div", { class: "comp" },
+      el("div", {}, el("b", {}, j.name), el("div", { class: "meta" }, `${t("next")}: ${j.next_run.replace("T", " ")}${j.failures ? ` · ${t("failed")} ×${j.failures}` : ""}`)))) : [el("p", { class: "muted" }, "–")]),
+      el("h2", { style: "margin-top:14px" }, t("Budgets")),
+      el("div", {}, `YouTube: ${fmt(h.quota.total)} / ${fmt(h.quota.limit)} (${t("live")}: ${fmt(h.quota.live)})${h.quota.exhausted ? " · ⛔ " + t("used up") : ""}`),
+      el("div", {}, `${t("AI")}: ${fmt(h.ai.calls)} / ${fmt(h.ai.limit)} · ${t("failures")}: ${fmt(h.ai.failures)} · ${t("free from FAQ/cache")}: ${fmt(h.ai.cached)}`)));
+    const errs = el("ul", { class: "feed" });
+    h.errors.forEach(e => errs.append(el("li", { text: `${new Date(e.ts * 1000).toLocaleString(lang)} · ${e.level} · ${e.logger}: ${e.msg}` })));
+    if (!h.errors.length) errs.append(el("li", { class: "muted" }, t("No errors 🎉")));
+    out.append(el("section", { class: "wide" }, el("h2", {}, t("Recent problems")), errs, el("p", { class: "meta", text: `${t("Full logs")}: ${h.log_file}` })));
+    return out;
+  };
+
+  // ---------------- settings ----------------
+  const lines = (v) => (v || []).join("\n");
+  const unlines = (v) => v.split("\n").map(s => s.trim()).filter(Boolean);
+  const kv = (o) => Object.entries(o || {}).map(([k, v]) => `${k} = ${v}`).join("\n");
+  const unkv = (txt) => Object.fromEntries(txt.split("\n").map(l => l.split("=")).filter(p => p.length > 1 && p[0].trim())
+                                             .map(([k, ...v]) => [k.trim(), v.join("=").trim()]));
+  function field(label, input, help) { return el("div", {}, el("label", {}, t(label)), input, help ? el("small", {}, t(help)) : null); }
+  const inp = (v, type = "text", extra = {}) => { const i = el("input", { type, ...extra }); i.value = v ?? ""; return i; };
+  const area = (v, extra = {}) => { const a = el("textarea", extra); a.value = v ?? ""; return a; };
+  const sel = (v, opts) => { const s = el("select", {}, ...opts.map(([val, label]) => el("option", { value: val }, t(label)))); s.value = v; return s; };
+  function card(title, nodes, save) {
+    const msg = el("span", { class: "msg" });
+    const btn = save ? el("button", { class: "primary" }, t("save")) : null;
+    if (btn) btn.onclick = () => busy(btn, async () => { const r = await save(); say(msg, r && r.ok !== false ? "ok" : "bad", r && r.ok !== false ? "✔ " + t("Saved") : (r && r.error) || "error"); });
+    return el("section", {}, el("h2", {}, t(title)), ...nodes, btn ? el("div", { class: "row" }, btn, msg) : null);
+  }
+  function faqEditor(items) {
+    const box = el("div", {});
+    const add = (q = "", a = "") => { const qi = inp(q, "text", { placeholder: t("Question") }), ai = inp(a, "text", { placeholder: t("Your answer") });
+      const row = el("div", { class: "faqrow" }, qi, ai, el("button", { onclick: () => row.remove() }, "✕")); row._get = () => ({ q: qi.value, a: ai.value }); box.append(row); };
+    (items || []).forEach(f => add(f.q, f.a));
+    const wrap = el("div", {}, box, el("div", { class: "row" }, el("button", { onclick: () => add() }, "+ " + t("Add question"))));
+    wrap.value = () => [...box.children].map(r => r._get()).filter(f => f.q.trim());
+    return wrap;
+  }
+
+  PAGES.settings = async () => {
+    const s = await api("/api/settings"), sys = s.system;
+    const save = (patch) => api("/api/settings", patch);
+    const out = el("div", { class: "grid two" });
+
+    const name = inp(s.channel.name), handle = inp(s.channel.handle), niche = inp(s.channel.niche), aud = inp(s.channel.audience),
+          rlang = inp(s.channel.language), tone = inp(s.voice.tone), sig = inp(s.voice.signature), rules = area(lines(s.voice.style_rules)), faq = faqEditor(s.faq);
+    out.append(card("Your channel & voice", [field("Channel name", name), field("Handle", handle), field("What your videos are about", niche),
+      field("Who watches", aud), field("Default reply language", rlang, "Viewers always get replies in their own language."),
+      field("Tone of voice", tone), field("Signature (optional)", sig), field("Style rules (one per line)", rules), el("label", {}, t("FAQ: answers the bot may use")), faq],
+      () => save({ channel: { name: name.value, handle: handle.value, niche: niche.value, audience: aud.value, language: rlang.value },
+                   voice: { tone: tone.value, signature: sig.value, style_rules: unlines(rules.value) }, faq: faq.value() })));
+
+    const mode = sel(s.comments.mode, [["review", "Review first (recommended)"], ["auto", "Automatic"]]),
+          perDay = inp(s.comments.max_replies_per_day, "number"), every = inp(s.comments.check_every_minutes, "number"), links = area(kv(s.links), { placeholder: "github = https://github.com/you" });
+    out.append(card("Comment replies", [field("Reply mode", mode, "Automatic still sends negative or unsure comments to you."),
+      field("Max replies per day", perDay), field("Check every (minutes)", every), field("Your links (name = url, one per line)", links, "The bot never shares any other link.")],
+      () => save({ comments: { mode: mode.value, max_replies_per_day: +perDay.value, check_every_minutes: +every.value }, links: unkv(links.value) })));
+
+    const greet = inp(s.live_chat.greeting), cmds = area(kv(s.live_chat.commands), { placeholder: "!discord = Join us: {discord}" }),
+          banned = inp((s.live_chat.banned_words || []).join(", ")), label = inp(s.live_chat.ai_label), perUser = inp(s.live_chat.ask_per_user_per_hour, "number"),
+          auto = el("input", { type: "checkbox" }); auto.checked = !!s.live_chat.auto_detect;
+    out.append(card("Live chat", [el("label", { class: "inline" }, auto, t("Start automatically when I go live")), field("Greeting", greet),
+      field("Commands (!name = reply, one per line)", cmds, "{name}, {channel} and your link names are filled in."), field("Banned words (comma separated)", banned),
+      field("Label on AI answers", label), field("!ask answers per viewer per hour", perUser)],
+      () => save({ live_chat: { greeting: greet.value, commands: unkv(cmds.value), banned_words: banned.value.split(",").map(x => x.trim()).filter(Boolean),
+                                ai_label: label.value, ask_per_user_per_hour: +perUser.value, auto_detect: auto.checked } })));
+
+    const ov = s.ui.overlay, pos = sel(ov.position, [["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"], ["top-left", "Top left"], ["top-right", "Top right"], ["center", "Center"]]),
+          secs = inp(ov.seconds, "number"), ulang = sel(s.ui.language, sys.languages.map(c => [c, c])),
+          shows = [["super_chat", "Super Chats"], ["member", "New members"], ["ask", "!ask answers"]].map(([k, l]) => { const c = el("input", { type: "checkbox" }); c.checked = ov.show.includes(k); c._k = k; return el("label", { class: "inline" }, c, t(l)); });
+    const newLang = inp("", "text", { placeholder: "ta, bn, de, ko…" }), langMsg = el("span", { class: "msg" });
+    out.append(card("OBS overlay & language", [field("OBS Browser Source URL", copyBox(sys.overlay_url)), field("OBS dock URL (View → Docks → Custom Browser Docks)", copyBox(sys.dock_url)),
+      field("Position", pos), el("label", {}, t("Show")), el("div", {}, ...shows), field("Seconds on screen", secs), field("Interface language", ulang),
+      el("label", {}, t("Add a language")), el("div", { class: "copy" }, newLang, el("button", { onclick: (e) => busy(e.target, async () => {
+        say(langMsg, "", "…"); const r = await api("/api/action/translate", { lang: newLang.value }); say(langMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + r.lang : r.error); }) }, t("Translate"))), langMsg],
+      () => save({ ui: { language: ulang.value, overlay: { position: pos.value, seconds: +secs.value, show: shows.map(l => l.firstChild).filter(c => c.checked).map(c => c._k) } } })));
+
+    const time = inp(s.report.time, "time"), tz = inp(sys.timezone), deliver = ["file", "discord", "telegram"].map(k => { const c = el("input", { type: "checkbox" }); c.checked = s.report.deliver_to.includes(k); c._k = k; return el("label", { class: "inline" }, c, k); });
+    const dh = inp("", "password", { placeholder: sys.discord ? "••••••• (" + t("saved") + ")" : "https://discord.com/api/webhooks/…" }),
+          tt = inp("", "password", { placeholder: sys.telegram ? "••••••• (" + t("saved") + ")" : t("Telegram bot token") }), tc = inp("", "text", { placeholder: t("Telegram chat id") });
+    out.append(card("Daily report & alerts", [field("Send the report at", time), field("Time zone", tz, "e.g. Asia/Kolkata, Europe/London"), el("label", {}, t("Send to")), el("div", {}, ...deliver),
+      field("Discord webhook", dh), field("Telegram bot token", tt), field("Telegram chat id", tc)],
+      async () => { if (dh.value || tt.value || tc.value) { const n = {}; if (dh.value) n.discord = dh.value; if (tt.value) n.telegram_token = tt.value; if (tc.value) n.telegram_chat = tc.value; const r = await api("/api/setup/notify", n); if (!r.ok) return r; }
+        return save({ report: { time: time.value, deliver_to: deliver.map(l => l.firstChild).filter(c => c.checked).map(c => c._k) }, system: { timezone: tz.value } }); }));
+
+    const limit = inp(s.quota.daily_limit, "number"), reserve = inp(s.quota.live_reserve, "number"), aimax = inp(s.ai.max_calls_per_day, "number");
+    out.append(card("Budgets", [field("YouTube units per day", limit, "Google's free quota is 10,000."), field("Reserved for live chat", reserve),
+      field("AI calls per day", aimax, "FAQ and cached answers don't count.")],
+      () => save({ quota: { daily_limit: +limit.value, live_reserve: +reserve.value }, ai: { max_calls_per_day: +aimax.value } })));
+
+    const lan = el("input", { type: "checkbox" }); lan.checked = sys.lan;
+    const phone = el("div", {}), secMsg = el("span", { class: "msg" });
+    const loadPhone = async () => { const r = await api("/api/security/phone-link"); phone.replaceChildren(r.url ? copyBox(r.url) : el("small", {}, r.error || t("Turn on phone access first."))); };
+    out.append(card("Phone access & security", [el("label", { class: "inline" }, lan, t("Allow phones on my Wi-Fi to open PixelPaw")),
+      el("small", {}, t("Only devices on your home network can connect. Anyone with the phone link can approve replies: keep it private.")),
+      el("div", { class: "row" }, el("button", { onclick: (e) => busy(e.target, async () => { const r = await api("/api/security/lan", { enabled: lan.checked });
+        say(secMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + t("Restarting… reload this page in a few seconds") : r.error); }) }, t("Apply")),
+        el("button", { onclick: loadPhone }, t("Show phone link")),
+        el("button", { onclick: (e) => busy(e.target, async () => { const r = await api("/api/security/rotate", {}); say(secMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + t("Old phone links no longer work") : r.error); phone.replaceChildren(); }) }, t("Reset phone links"))),
+      phone, secMsg]));
+
+    const as = el("input", { type: "checkbox" }); as.checked = sys.autostart;
+    const sysMsg = el("span", { class: "msg" });
+    out.append(card("This computer", [el("label", { class: "inline" }, as, t("Start PixelPaw when I log in")),
+      el("div", { class: "row" },
+        el("button", { onclick: (e) => busy(e.target, async () => { const r = await api("/api/system/autostart", { enabled: as.checked }); say(sysMsg, r.ok ? "ok" : "bad", r.ok ? "✔" : r.error); }) }, t("Apply")),
+        el("button", { onclick: (e) => busy(e.target, async () => { const r = await api("/api/system/shortcut", {}); say(sysMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + r.path : r.error); }) }, t("Desktop shortcut")),
+        el("button", { class: "danger", onclick: async () => { await api("/api/system/stop", {}); document.body.replaceChildren(el("h2", { style: "padding:2em" }, "🐾 " + t("PixelPaw stopped. Double-click PixelPaw to start it again."))); } }, t("Stop PixelPaw"))),
+      sysMsg, el("p", { class: "meta", text: `${t("AI")}: ${sys.provider} · ${sys.model} · ${t("Full logs")}: ${sys.log_file}` })]));
+    return out;
+  };
+
+  // ---------------- setup wizard ----------------
+  PAGES.setup = async () => {
+    await loadState();
+    const st = state.setup, q = route().q;
+    const box = el("section", {});
+    if (q.get("error")) box.append(el("div", { class: "banner bad", text: q.get("error") }));
+    if (q.get("youtube") === "ok") box.append(el("div", { class: "banner ok" }, "✔ " + t("YouTube connected!")));
+    box.append(el("h2", {}, t("Setup")), el("p", { class: "muted" }, t("Four steps, about 10 minutes, only once. PixelPaw then runs on its own.")));
+    const step = (n, done, title, ...body) => el("div", { class: "step" }, el("div", { class: "num" + (done ? " done" : "") }, done ? "✓" : n), el("div", {}, el("h3", {}, t(title)), ...body));
+
+    // 1. AI
+    const prov = sel("gemini", [["gemini", "Google Gemini (free tier, recommended)"], ["openai", "OpenAI"], ["local", "Local model (Ollama, free, offline)"]]);
+    const key = inp("", "password", { placeholder: st.ai ? "••••••• (" + t("saved") + ")" : t("Paste your API key") }), model = inp("", "text", { placeholder: t("Model (optional)") });
+    const keyHelp = el("small", {}), aiMsg = el("span", { class: "msg" });
+    const upd = () => { const p = prov.value; key.parentNode.hidden = p === "local";
+      keyHelp.replaceChildren(p === "gemini" ? el("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener" }, t("Get a free Gemini key")) :
+        p === "openai" ? el("a", { href: "https://platform.openai.com/api-keys", target: "_blank", rel: "noopener" }, t("Get an OpenAI key")) :
+        el("span", {}, t("Install Ollama from ollama.com and run a model, e.g. llama3.2."))); };
+    prov.onchange = upd;
+    const aiBtn = el("button", { class: "primary" }, t("Save & test"));
+    aiBtn.onclick = () => busy(aiBtn, async () => { say(aiMsg, "", t("Testing…"));
+      const r = await api("/api/setup/ai", { provider: prov.value, key: key.value, model: model.value });
+      say(aiMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + r.answer : "✖ " + (r.error || "")); if (r.ok) setTimeout(render, 900); });
+    box.append(step(1, st.ai, "Connect an AI model", field("Provider", prov), el("div", {}, field("API key", key)), keyHelp, field("Model", model), el("div", { class: "row" }, aiBtn, aiMsg)));
+    setTimeout(upd);
+
+    // 2. YouTube
+    const file = el("input", { type: "file", accept: ".json,application/json" }), ytMsg = el("span", { class: "msg" });
+    file.onchange = async () => { const txt = await file.files[0].text(); const r = await api("/api/setup/client-secret", { content: txt });
+      say(ytMsg, r.ok ? "ok" : "bad", r.ok ? "✔ " + t("Google client saved") : "✖ " + r.error); if (r.ok) setTimeout(render, 700); };
+    const guide = el("details", { open: !st.client_secret }, el("summary", {}, t("How to get the Google file (once, ~5 minutes)")), el("ol", {},
+      el("li", {}, el("a", { href: "https://console.cloud.google.com/projectcreate", target: "_blank", rel: "noopener" }, t("Create a Google Cloud project")), " (", t("any name"), ")"),
+      el("li", {}, t("Enable"), " ", el("a", { href: "https://console.cloud.google.com/apis/library/youtube.googleapis.com", target: "_blank", rel: "noopener" }, "YouTube Data API v3"), " ", t("and"), " ",
+        el("a", { href: "https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com", target: "_blank", rel: "noopener" }, "YouTube Analytics API")),
+      el("li", {}, el("a", { href: "https://console.cloud.google.com/auth/overview", target: "_blank", rel: "noopener" }, t("OAuth consent screen")), ": ", t("External; add your YouTube Google account as a test user")),
+      el("li", {}, el("a", { href: "https://console.cloud.google.com/apis/credentials", target: "_blank", rel: "noopener" }, t("Credentials")), " → ", t("Create credentials → OAuth client ID → Desktop app → Download JSON")),
+      el("li", {}, t("Choose that file below"))));
+    const signIn = el("button", { class: "primary", disabled: !st.client_secret, onclick: () => { location.href = "/oauth/start"; } }, "🔐 " + t("Sign in with Google"));
+    box.append(step(2, st.youtube, "Connect your YouTube channel", guide, field("Google client file (client_secret.json)", file), ytMsg,
+      el("div", { class: "row" }, signIn, st.youtube ? el("span", { class: "ok" }, "✔ " + t("Connected")) : null),
+      el("small", {}, t("Google may show 'unverified app': that's your own app, click Continue."))));
+
+    // 3. Persona
+    const learnMsg = el("span", { class: "msg" }), preview = el("div", {});
+    const learn = el("button", { class: "primary", disabled: !st.youtube }, "✨ " + t("Learn from my channel"));
+    learn.onclick = () => busy(learn, async () => { say(learnMsg, "", t("Reading your channel… about a minute"));
+      const r = await api("/api/action/learn", {}); if (!r.ok) return say(learnMsg, "bad", r.error); say(learnMsg, "", "");
+      const sg = r.suggestion; const niche = inp(sg.channel.niche), aud = inp(sg.channel.audience), tone = inp(sg.voice.tone), rules = area(lines(sg.voice.style_rules)), faq = faqEditor(sg.faq);
+      const sv = el("button", { class: "primary" }, t("Use this")), m2 = el("span", { class: "msg" });
+      sv.onclick = () => busy(sv, async () => { const res = await api("/api/settings", { channel: { ...sg.channel, niche: niche.value, audience: aud.value },
+        voice: { tone: tone.value, style_rules: unlines(rules.value), examples: sg.voice.examples || [] }, faq: faq.value() });
+        say(m2, res.ok ? "ok" : "bad", res.ok ? "✔ " + t("Saved") : res.error); if (res.ok) setTimeout(render, 700); });
+      preview.replaceChildren(field("What your videos are about", niche), field("Who watches", aud), field("Tone of voice", tone), field("Style rules (one per line)", rules),
+        el("label", {}, t("Questions viewers ask: add your answers")), faq, el("div", { class: "row" }, sv, m2)); });
+    box.append(step(3, st.persona, "Teach it your voice", el("p", { class: "muted" }, t("PixelPaw reads your videos and your own replies, then suggests how to sound like you. You can edit everything later in Settings.")),
+      el("div", { class: "row" }, learn, learnMsg), preview));
+
+    // 4. OBS
+    const sys = (await api("/api/settings")).system;
+    box.append(step(4, false, "Add it to OBS (optional)", el("ol", {},
+      el("li", {}, t("In OBS: Tools → Scripts → + → choose"), " ", el("b", {}, "obs/pixelpaw.lua"), " ", t("from the PixelPaw folder")),
+      el("li", {}, t("Tick 'Start PixelPaw when OBS starts', then click 'Add overlay to current scene'")),
+      el("li", {}, t("Optional dock: View → Docks → Custom Browser Docks → name PixelPaw, URL below"))),
+      field("Overlay URL", copyBox(sys.overlay_url)), field("Dock URL", copyBox(sys.dock_url)),
+      el("div", { class: "row" }, el("button", { onclick: () => api("/api/test", {}) }, t("send_test")))));
+
+    if (st.complete) box.append(el("div", { class: "banner ok", style: "margin-top:16px" }, "🎉 " + t("All set! PixelPaw now works in the background. You can close this tab.")));
+    return box;
+  };
+
+  // ---------------- boot ----------------
+  try { await loadState(); } catch (e) { if (e.message === "401") { $("#view").replaceChildren(); return; } }
+  connect();
+  render();
+  setInterval(() => { if (route().tab === "home" || !route().tab) loadState().catch(() => {}); }, 60000);
+})();
+</script>
+</body>
+</html>

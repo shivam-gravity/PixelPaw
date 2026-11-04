@@ -6,6 +6,7 @@ Persona  = everything that makes the bot *yours*: voice, FAQ, links, rules.
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -83,6 +84,9 @@ DEFAULT_PERSONA: dict = {
         "min_seconds_between_bot_messages": 4,
         "command_cooldown_seconds": 30,
         "ai_label": "🤖",
+        "ask_per_user_per_hour": 4,
+        "ask_per_minute": 6,
+        "ask_cache_days": 7,
         "commands": {},
         "banned_words": [],
         "moderation_action": "delete",  # delete | ignore
@@ -98,6 +102,13 @@ DEFAULT_PERSONA: dict = {
         "recent_uploads": 5,
     },
     "automations": [],
+    "quota": {
+        "daily_limit": 10000,  # YouTube Data API units per day (Google's default)
+        "live_reserve": 3000,  # units only live chat may use
+    },
+    "ai": {
+        "max_calls_per_day": 400,
+    },
     "ui": {
         "language": "en",  # report, overlay and dashboard language (any code; see `translate-ui`)
         "overlay": {
@@ -138,6 +149,8 @@ class Settings:
     telegram_chat_id: str
     web_host: str
     web_port: int
+    env_file: Path = ROOT / ".env"
+    data_dir: Path = ROOT / "data"
 
 
 def _path(name: str, default: str) -> Path:
@@ -165,11 +178,52 @@ def load_settings() -> Settings:
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
         web_host=(os.getenv("PIXELPAW_WEB_HOST") or "127.0.0.1"),
         web_port=int(os.getenv("PIXELPAW_WEB_PORT") or "8765"),
+        env_file=ROOT / ".env",
+        data_dir=_path("PIXELPAW_DATA", "data"),
     )
 
 
-def load_persona(path: Path) -> dict:
+def load_persona(path: Path, overrides: Path | None = None) -> dict:
+    """persona.yaml (your hand-edited defaults) + settings saved from the dashboard (data/persona.local.json)."""
     data = {}
     if path.exists():
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return _deep_merge(DEFAULT_PERSONA, data)
+    merged = _deep_merge(DEFAULT_PERSONA, data)
+    if overrides and overrides.exists():
+        try:
+            merged = _deep_merge(merged, json.loads(overrides.read_text(encoding="utf-8")) or {})
+        except (ValueError, OSError):
+            pass
+    return merged
+
+
+def save_persona_overrides(overrides: Path, patch: dict) -> dict:
+    current = {}
+    if overrides.exists():
+        try:
+            current = json.loads(overrides.read_text(encoding="utf-8")) or {}
+        except ValueError:
+            current = {}
+    merged = _deep_merge(current, patch)
+    overrides.parent.mkdir(parents=True, exist_ok=True)
+    tmp = overrides.with_suffix(".tmp")
+    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(overrides)
+    return merged
+
+
+def update_env(path: Path, values: dict[str, str]) -> None:
+    """Set KEY=value lines in .env (keeps everything else) and in the running process."""
+    lines = path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []
+    pending = {k: "".join(str(v).split()) if k.endswith(("_KEY", "_TOKEN")) else " ".join(str(v).split()) for k, v in values.items()}
+    out = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip().removeprefix("export ").strip() if "=" in line and not line.lstrip().startswith("#") else None
+        if key in pending:
+            out.append(f"{key}={pending.pop(key)}")
+        else:
+            out.append(line)
+    out += [f"{k}={v}" for k, v in pending.items()]
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    for k in values:
+        os.environ[k] = next((line.split("=", 1)[1] for line in out if line.startswith(f"{k}=")), "")

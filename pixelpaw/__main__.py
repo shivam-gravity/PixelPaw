@@ -13,7 +13,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="pixelpaw", description="🐾 PixelPaw: your personalised YouTube channel bot.")
     parser.add_argument("-v", "--verbose", action="store_true")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("start", help="start PixelPaw in the background and open the app (same as double-clicking)")
 
     sub.add_parser("doctor", help="check your setup")
     a = sub.add_parser("auth", help="sign in to YouTube (opens a browser)")
@@ -42,15 +43,17 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("languages", help="list interface languages")
 
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    if args.cmd in (None, "start"):  # no command = behave like the double-click launcher
+        from .launcher import main as launch
+
+        return launch(["-v"] if args.verbose else [])
 
     from .app import App
+    from .health import setup_logging
 
     app = App()
+    setup_logging(app.settings.data_dir / "logs", verbose=args.verbose)
+    logging.getLogger(__name__).debug("command: %s", args.cmd)
 
     if args.cmd == "doctor":
         return doctor(app)
