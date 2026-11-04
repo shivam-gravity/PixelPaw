@@ -36,10 +36,12 @@ def persona_prompt(persona: dict) -> str:
             "Real examples of how I reply to viewers (match this voice):\n"
             + "\n".join(f"- {e}" for e in voice["examples"][:15])
         )
-    if persona.get("faq"):
+    faq = [f for f in persona.get("faq") or []
+           if str(f.get("a") or "").strip() and not str(f.get("a")).strip().upper().startswith("TODO")]
+    if faq:
         lines.append(
             "Facts you may use when answering (do not invent other facts):\n"
-            + "\n".join(f"Q: {f.get('q', '')}\nA: {f.get('a', '')}" for f in persona["faq"])
+            + "\n".join(f"Q: {f.get('q', '')}\nA: {f.get('a', '')}" for f in faq)
         )
     links = {k: v for k, v in (persona.get("links") or {}).items() if v}
     if links:

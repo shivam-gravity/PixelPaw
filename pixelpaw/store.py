@@ -33,6 +33,33 @@ CREATE TABLE IF NOT EXISTS snapshots (
     videos      INTEGER,
     taken_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS quota (          -- YouTube API units used, per Pacific day
+    day    TEXT NOT NULL,
+    bucket TEXT NOT NULL,                   -- live | normal
+    units  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, bucket)
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day      TEXT PRIMARY KEY,
+    calls    INTEGER NOT NULL DEFAULT 0,
+    failures INTEGER NOT NULL DEFAULT 0,
+    cached   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS answer_cache (   -- reviewed !ask answers, reused for repeat questions
+    key        TEXT PRIMARY KEY,
+    question   TEXT,
+    answer     TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    hits       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 COMMENT_FIELDS = (
@@ -135,6 +162,69 @@ class Store:
                 "views=excluded.views, videos=excluded.videos, taken_at=excluded.taken_at",
                 (day, subscribers, views, videos, _now()),
             )
+            self._db.commit()
+
+    # ---- quota / AI usage / cache / kv -----------------------------------
+    def quota_add(self, day: str, bucket: str, units: int) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO quota (day, bucket, units) VALUES (?,?,?) "
+                "ON CONFLICT(day, bucket) DO UPDATE SET units = units + excluded.units",
+                (day, bucket, units),
+            )
+            self._db.commit()
+
+    def quota_used(self, day: str) -> dict[str, int]:
+        with self._lock:
+            rows = self._db.execute("SELECT bucket, units FROM quota WHERE day = ?", (day,)).fetchall()
+        return {r["bucket"]: int(r["units"]) for r in rows}
+
+    def ai_add(self, day: str, field: str) -> None:
+        assert field in ("calls", "failures", "cached")
+        with self._lock:
+            self._db.execute(
+                f"INSERT INTO ai_usage (day, {field}) VALUES (?, 1) "
+                f"ON CONFLICT(day) DO UPDATE SET {field} = {field} + 1",
+                (day,),
+            )
+            self._db.commit()
+
+    def ai_used(self, day: str) -> dict[str, int]:
+        with self._lock:
+            row = self._db.execute("SELECT calls, failures, cached FROM ai_usage WHERE day = ?", (day,)).fetchone()
+        return dict(row) if row else {"calls": 0, "failures": 0, "cached": 0}
+
+    def cache_get(self, key: str, max_age_s: float) -> str | None:
+        import time
+
+        with self._lock:
+            row = self._db.execute("SELECT answer, created_at FROM answer_cache WHERE key = ?", (key,)).fetchone()
+            if not row or time.time() - row["created_at"] > max_age_s:
+                return None
+            self._db.execute("UPDATE answer_cache SET hits = hits + 1 WHERE key = ?", (key,))
+            self._db.commit()
+        return row["answer"]
+
+    def cache_put(self, key: str, question: str, answer: str) -> None:
+        import time
+
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO answer_cache (key, question, answer, created_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET answer=excluded.answer, created_at=excluded.created_at",
+                (key, question, answer, time.time()),
+            )
+            self._db.commit()
+
+    def kv_get(self, key: str, default: str | None = None) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def kv_set(self, key: str, value: str) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO kv (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                             (key, value))
             self._db.commit()
 
     def latest_snapshot(self) -> dict | None:

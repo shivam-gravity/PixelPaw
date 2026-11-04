@@ -11,6 +11,7 @@ import re
 import time
 
 from .config import Settings
+from .health import health
 from .net import ApiError, request
 
 log = logging.getLogger(__name__)
@@ -24,7 +25,8 @@ class LLMError(RuntimeError):
 
 
 class LLM:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, budget=None):
+        self.budget = budget  # quota.AiBudget: daily cap + usage counts (optional)
         self.provider = settings.llm_provider
         self.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS") or "45")
         if self.provider == "gemini":
@@ -53,6 +55,21 @@ class LLM:
         return parse_json(self._generate(system, prompt, temperature, as_json=True))
 
     def _generate(self, system: str, prompt: str, temperature: float, as_json: bool) -> str:
+        if self.budget:
+            self.budget.check()
+        try:
+            result = self._generate_inner(system, prompt, temperature, as_json)
+        except LLMError as exc:
+            if self.budget:
+                self.budget.record(ok=False)
+            health.fail("ai", str(exc)[:200])
+            raise
+        if self.budget:
+            self.budget.record(ok=True)
+        health.ok("ai", f"{self.provider}")
+        return result
+
+    def _generate_inner(self, system: str, prompt: str, temperature: float, as_json: bool) -> str:
         last: Exception | None = None
         now = time.time()
         # Models that failed recently go to the back of the line for 10 minutes.

@@ -1,27 +1,42 @@
-"""Live chat bot: !commands, !ask (AI answers in your voice), Super Chat thanks, banned-word moderation."""
+"""Live chat bot: !commands, !ask (answers in your voice), Super Chat thanks, spam/link moderation.
+
+Cost control for !ask: your FAQ answers first (free), then a cache of answers that already passed the
+guideline review, then the AI. Per-viewer and per-minute limits stop anyone from draining the budget.
+Reliability: polling backs off on errors, slows down when YouTube quota runs low, and the watcher
+restarts the bot if it ever crashes.
+"""
 from __future__ import annotations
 
+import difflib
+import hashlib
 import logging
+import re
 import threading
 import time
-from collections import Counter, deque
-
-from .net import ApiError
+from collections import Counter, defaultdict, deque
 
 from . import policy
 from .events import bus, live_state
+from .health import health
 from .intelligence import persona_prompt
 from .llm import LLMError
+from .net import ApiError
 from .youtube import error_reason
 
 log = logging.getLogger(__name__)
 
 STOP_REASONS = {"liveChatEnded", "liveChatNotFound", "liveChatDisabled", "forbidden", "quotaExceeded"}
+REPEAT_WINDOW_S = 180  # identical bot answers within 3 minutes count as repetitive chat
 
 
 class _Blank(dict):
     def __missing__(self, key):
         return ""
+
+
+def normalise_question(text: str) -> str:
+    text = re.sub(r"[^\w\s]", " ", (text or "").lower())
+    return " ".join(text.split())
 
 
 class LiveChatBot:
@@ -31,15 +46,17 @@ class LiveChatBot:
         self.my_id = yt.channel_id
         self.chatters: Counter = Counter()
         self._last_ask: dict[str, float] = {}
+        self._asks_by_user: dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
+        self._asks_all: deque[float] = deque(maxlen=200)
         self._last_cmd: dict[str, float] = {}
         self._last_sent = 0.0
-        self._recent_ai: deque[str] = deque(maxlen=40)
+        self._recent_ai: deque[tuple[float, str]] = deque(maxlen=40)
         links = {k: v for k, v in (app.persona.get("links") or {}).items() if v}
         self._vars = _Blank(links, channel=app.persona["channel"]["name"], title=title)
         self._disabled_commands = self._validate_templates()
 
     def _validate_templates(self) -> set[str]:
-        """Check the fixed messages in persona.yaml against the guidelines once, at startup."""
+        """Check the fixed messages in persona settings against the guidelines once, at startup."""
         disabled = set()
         named = {"greeting": self.cfg.get("greeting") or "",
                  "super_chat_thanks": self.cfg.get("super_chat_thanks") or "",
@@ -136,7 +153,8 @@ class LiveChatBot:
             return
         cmd, _, arg = text.partition(" ")
         cmd = cmd.lower()
-        commands = {k.lower(): v for k, v in (self.cfg.get("commands") or {}).items() if k.lower() not in self._disabled_commands}
+        commands = {k.lower(): v for k, v in (self.cfg.get("commands") or {}).items()
+                    if v and k.lower() not in self._disabled_commands}
 
         if cmd == self.cfg["ask_command"].lower():
             self.ask(name, author.get("channelId", name), arg.strip())
@@ -157,34 +175,78 @@ class LiveChatBot:
         else:
             self.say(self.fill(commands[cmd], name=name))
 
+    # ---- !ask -----------------------------------------------------------
+    def _allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        if now - self._last_ask.get(key, -1e9) < self.cfg["ask_cooldown_seconds"]:
+            return False
+        user = self._asks_by_user[key]
+        if sum(1 for t in user if now - t < 3600) >= self.cfg["ask_per_user_per_hour"]:
+            return False
+        if sum(1 for t in self._asks_all if now - t < 60) >= self.cfg["ask_per_minute"]:
+            return False
+        self._last_ask[key] = now
+        user.append(now)
+        self._asks_all.append(now)
+        return True
+
+    def faq_answer(self, question: str) -> str | None:
+        q = normalise_question(question)
+        best, score = None, 0.0
+        for item in self.app.persona.get("faq") or []:
+            answer = str(item.get("a") or "").strip()
+            if not answer or answer.upper().startswith("TODO"):
+                continue
+            ratio = difflib.SequenceMatcher(None, q, normalise_question(item.get("q", ""))).ratio()
+            if ratio > score:
+                best, score = answer, ratio
+        return best if score >= 0.72 else None
+
     def ask(self, name: str, key: str, question: str) -> None:
         if not question:
             self.say(f"@{name} ask me something after {self.cfg['ask_command']} 🙂")
             return
-        now = time.monotonic()
-        if now - self._last_ask.get(key, -1e9) < self.cfg["ask_cooldown_seconds"]:
-            return
-        self._last_ask[key] = now
-        system = persona_prompt(self.app.persona) + (
-            "\n\nYou are answering a viewer in your live stream chat"
-            + (f" (stream: \"{self.title}\")" if self.title else "")
-            + ". Reply in the same language the viewer used, in under 170 characters, plain text, friendly."
-            + " If you don't know, say so honestly."
-        )
-        try:
-            answer = self.app.llm.text(system, f"{name} asks: {question}", temperature=0.6)
-        except LLMError as exc:
-            log.error("!ask failed: %s", exc)
+        if not self._allowed(key):
             return
         label = (self.cfg.get("ai_label") or "").strip()
-        message = f"{label + ' ' if label else ''}@{name} {answer}"[:200]
-        verdict = policy.full_check(self.app.llm, self.app.persona, message, f"Live chat question from {name}: {question}")
-        if verdict.block:
-            log.warning("!ask answer not sent (%s)", verdict.summary())
-            return
-        if self.say(message, recent=list(self._recent_ai)):
-            self._recent_ai.append(message)
+        prefix = f"{label + ' ' if label else ''}@{name} "
+        cache_key = hashlib.sha256(normalise_question(question).encode()).hexdigest()[:32]
+        recent = [t for ts, t in self._recent_ai if time.monotonic() - ts < REPEAT_WINDOW_S]
+
+        answer = self.faq_answer(question)
+        source = "faq"
+        if answer is None:
+            answer = self.app.store.cache_get(cache_key, self.cfg["ask_cache_days"] * 86400)
+            source = "cache"
+        if answer is not None:
+            self.app.ai_budget.record_cached()
+        else:
+            source = "ai"
+            system = persona_prompt(self.app.persona) + (
+                "\n\nYou are answering a viewer in your live stream chat"
+                + (f" (stream: \"{self.title}\")" if self.title else "")
+                + ". Reply in the same language the viewer used, in under 170 characters, plain text, friendly."
+                + " If you don't know, say so honestly."
+            )
+            try:
+                answer = self.app.llm.text(system, f"{name} asks: {question}", temperature=0.6)
+            except LLMError as exc:
+                log.error("!ask failed: %s", exc)
+                return
+            verdict = policy.full_check(self.app.llm, self.app.persona, prefix + answer, f"Live chat question from {name}: {question}")
+            if verdict.block:
+                log.warning("!ask answer not sent (%s)", verdict.summary())
+                return
+            self.app.store.cache_put(cache_key, question[:300], answer)
+
+        message = (prefix + answer)[:200]
+        if any("repetitive" in r for r in policy.check_text(message, self.app.persona, recent).review):
+            # Same answer was just posted: point to it instead of repeating it (no repetitive chat).
+            message, recent = f"{prefix}answered just above ☝️", []
+        if self.say(message, recent=recent):
+            self._recent_ai.append((time.monotonic(), message))
             bus.emit("ask", name=name, question=question[:200], answer=answer[:200])
+            log.info("!ask answered from %s", source, extra={"event": "ask", "source": source})
 
     # ---- loop -----------------------------------------------------------
     def run(self, stop: threading.Event | None = None) -> None:
@@ -194,17 +256,21 @@ class LiveChatBot:
         wait = max(resp.get("pollingIntervalMillis", 5000) / 1000, self.cfg["poll_seconds_min"])
         log.info("Connected to live chat%s", f" for \"{self.title}\"" if self.title else "")
         live_state.active, live_state.title, live_state.chatters = True, self.title, 0
+        health.ok("live_chat", f"connected: {self.title}"[:120])
         bus.emit("live", active=True, title=self.title)
         try:
             self._loop(stop, token, wait)
         finally:
             live_state.active = False
+            health.ok("live_chat", "not live")
             bus.emit("live", active=False, title=self.title)
+            if self.chatters:
+                log.info("Top chatters this stream: %s", self.chatters.most_common(5))
 
     def _loop(self, stop: threading.Event, token, wait) -> None:
         if self.cfg.get("greeting") and "greeting" not in self._disabled_commands:
             self.say(self.fill(self.cfg["greeting"]))
-
+        backoff = 0.0
         while not stop.wait(wait):
             try:
                 resp = self.yt.live_messages(self.chat_id, token)
@@ -212,12 +278,22 @@ class LiveChatBot:
                 reason = error_reason(exc)
                 if reason in STOP_REASONS:
                     log.info("Live chat stopped: %s", reason)
-                    break
-                log.warning("Live chat poll error (%s), backing off", reason or exc)
-                wait = 30
+                    return
+                if reason == "localQuotaBudget":
+                    health.warn("live_chat", "paused: YouTube quota almost used up")
+                    wait = 300
+                    continue
+                backoff = min(60.0, backoff * 2 or 5.0)
+                health.warn("live_chat", f"reconnecting ({exc.status or 'network'})")
+                log.warning("Live chat poll error (%s), retrying in %.0fs", reason or exc, backoff)
+                wait = backoff
                 continue
+            if backoff:
+                health.ok("live_chat", f"connected: {self.title}"[:120])
+                backoff = 0.0
             token = resp.get("nextPageToken", token)
-            wait = max(resp.get("pollingIntervalMillis", 5000) / 1000, self.cfg["poll_seconds_min"])
+            mult = self.app.quota.poll_multiplier() if getattr(self.app, "quota", None) else 1.0
+            wait = max(resp.get("pollingIntervalMillis", 5000) / 1000, self.cfg["poll_seconds_min"]) * mult
             for msg in resp.get("items", []):
                 try:
                     self.handle(msg)
@@ -225,13 +301,11 @@ class LiveChatBot:
                     log.exception("Error handling chat message")
             if resp.get("offlineAt"):
                 log.info("Stream went offline.")
-                break
-        if self.chatters:
-            log.info("Top chatters this stream: %s", self.chatters.most_common(5))
+                return
 
 
 class LiveWatcher:
-    """Used by `run`: checks for an active stream and starts the chat bot in a thread."""
+    """Used by the service: checks for an active stream and runs the chat bot in a thread (restarts it if it dies)."""
 
     def __init__(self, app):
         self.app = app
@@ -241,14 +315,26 @@ class LiveWatcher:
     def check(self) -> None:
         if self.thread and self.thread.is_alive():
             return
-        yt = self.app.yt  # the REST client is thread-safe
-        found = yt.active_live_chat()
+        if self.app.quota.remaining() < 100:
+            health.warn("live_chat", "YouTube quota too low to watch for streams")
+            return
+        found = self.app.yt.active_live_chat()
         if not found:
+            if health.status("live_chat") in ("unknown", "error"):
+                health.ok("live_chat", "not live")
             return
         chat_id, title = found
-        bot = LiveChatBot(self.app, yt, chat_id, title)
+        bot = LiveChatBot(self.app, self.app.yt, chat_id, title)
         self.stop.clear()
-        self.thread = threading.Thread(target=bot.run, args=(self.stop,), name="live-chat", daemon=True)
+
+        def guarded():
+            try:
+                bot.run(self.stop)
+            except Exception as exc:
+                health.fail("live_chat", f"crashed: {exc}"[:200])
+                log.exception("Live chat bot crashed; it will restart on the next check")
+
+        self.thread = threading.Thread(target=guarded, name="live-chat", daemon=True)
         self.thread.start()
 
     def shutdown(self) -> None:
